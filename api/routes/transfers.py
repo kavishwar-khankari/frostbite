@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from api.deps import DBSession
+from core.transfer_manager import stop_rclone_job
 from models.schemas import TransferResponse
 from models.tables import MediaItem, Transfer
 
@@ -57,7 +58,17 @@ async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferResp
     if transfer.status not in ("queued", "active"):
         raise HTTPException(status_code=400, detail=f"Cannot cancel transfer in status '{transfer.status}'")
 
+    # Stop the rclone job before marking cancelled (best-effort)
+    await stop_rclone_job(transfer.rclone_job_id)
+
     transfer.status = "cancelled"
+    # Roll back the media item tier if it was mid-transfer
+    if transfer.media_item:
+        item = transfer.media_item
+        if item.storage_tier == "transferring":
+            item.storage_tier = "hot" if transfer.direction == "freeze" else "cold"
+            item.transfer_direction = None
+
     await db.commit()
     await db.refresh(transfer)
     return _resp(transfer)

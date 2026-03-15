@@ -48,6 +48,15 @@ export const cancelTransfer = (id) =>
 export const retryTransfer = (id) =>
   req(`/transfers/${id}/retry`, { method: 'POST' })
 
+export const pauseAllTransfers = () =>
+  req('/transfers/pause-all', { method: 'POST' })
+
+export const resumeTransfers = () =>
+  req('/transfers/resume', { method: 'POST' })
+
+export const getWorkerStatus = () =>
+  req('/transfers/worker-status')
+
 // ── Controls ──────────────────────────────────────────────────────────────
 export const manualFreeze = (jellyfin_id) =>
   req('/freeze', { method: 'POST', body: JSON.stringify({ jellyfin_id }) })

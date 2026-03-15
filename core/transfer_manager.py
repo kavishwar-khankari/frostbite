@@ -6,6 +6,7 @@ picks them off the queue and executes them via rclone RC.
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime
 
@@ -25,6 +26,11 @@ _MAX_ACTIVE_FREEZES = settings.max_concurrent_freezes
 
 # Background task handle
 _worker_task: asyncio.Task | None = None
+_paused: bool = False
+
+
+def is_paused() -> bool:
+    return _paused
 
 
 class TransferManager:
@@ -46,12 +52,9 @@ async def queue_transfer(
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == media_item_id))
     item = item_result.scalar_one()
 
-    if direction == "freeze":
-        source = item.file_path
-        dest = item.file_path
-    else:
-        source = item.file_path
-        dest = item.file_path
+    # Store path relative to jellyfin_media_root — this matches the
+    # subdirectory layout on both NAS and cloud remote.
+    rel_path = os.path.relpath(item.file_path, settings.jellyfin_media_root)
 
     transfer = Transfer(
         media_item_id=media_item_id,
@@ -59,12 +62,57 @@ async def queue_transfer(
         trigger=trigger,
         priority=priority,
         status="queued",
-        source_path=source,
-        dest_path=dest,
+        source_path=rel_path,
+        dest_path=rel_path,
     )
     db.add(transfer)
     await db.flush()
     return transfer
+
+
+async def stop_rclone_job(job_id: int | None) -> None:
+    """Tell rclone RC to stop a job. Best-effort — logs on failure."""
+    if not job_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"{settings.rclone_rc_url}/job/stop", json={"jobid": job_id})
+    except Exception as exc:
+        logger.warning("Could not stop rclone job %s: %s", job_id, exc)
+
+
+async def pause_all_transfers(db: AsyncSession) -> int:
+    """Stop all active rclone jobs and re-queue their transfers. Returns count."""
+    global _paused
+    _paused = True
+
+    result = await db.execute(select(Transfer).where(Transfer.status == "active"))
+    active = list(result.scalars())
+
+    for t in active:
+        await stop_rclone_job(t.rclone_job_id)
+        t.status = "queued"
+        t.rclone_job_id = None
+        t.rclone_group = None
+        t.started_at = None
+
+    # Also reset media item tier for affected items
+    for t in active:
+        item_result = await db.execute(select(MediaItem).where(MediaItem.id == t.media_item_id))
+        item = item_result.scalar_one_or_none()
+        if item:
+            item.storage_tier = "hot" if t.direction == "freeze" else "cold"
+            item.transfer_direction = None
+
+    await db.commit()
+    logger.info("Paused: stopped %d active transfers", len(active))
+    return len(active)
+
+
+def resume_transfers() -> None:
+    global _paused
+    _paused = False
+    logger.info("Transfer worker resumed")
 
 
 # ── Worker loop ───────────────────────────────────────────────────────────────
@@ -107,12 +155,13 @@ async def _process_queue() -> None:
         for t in active:
             await _poll_transfer(db, t)
 
-        # Pick next queued transfer
-        if active_reheats < _MAX_ACTIVE_REHEATS:
-            await _start_next(db, "reheat")
-        if active_freezes < _MAX_ACTIVE_FREEZES:
-            if _freeze_window_active():
-                await _start_next(db, "freeze")
+        # Pick next queued transfer (skip if globally paused)
+        if not _paused:
+            if active_reheats < _MAX_ACTIVE_REHEATS:
+                await _start_next(db, "reheat")
+            if active_freezes < _MAX_ACTIVE_FREEZES:
+                if _freeze_window_active():
+                    await _start_next(db, "freeze")
 
         await db.commit()
 
@@ -141,6 +190,8 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
     item = item_result.scalar_one()
 
+    # transfer.source_path / dest_path are relative to jellyfin_media_root,
+    # matching the subdirectory layout on both NAS and cloud remote.
     if transfer.direction == "freeze":
         src_fs = f"{settings.nas_root}/"
         dst_fs = f"{settings.rclone_remote}:media/"
@@ -150,10 +201,13 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{settings.rclone_rc_url}/sync/copy", json={
+            # operations/copyfile copies a single file (srcRemote/dstRemote are
+            # paths *within* their respective fs roots). sync/copy would sync
+            # the entire fs and does not accept srcRemote/dstRemote.
+            resp = await client.post(f"{settings.rclone_rc_url}/operations/copyfile", json={
                 "srcFs": src_fs,
-                "dstFs": dst_fs,
                 "srcRemote": transfer.source_path,
+                "dstFs": dst_fs,
                 "dstRemote": transfer.dest_path,
                 "_async": True,
                 "_group": f"frostbite-{transfer.id}",

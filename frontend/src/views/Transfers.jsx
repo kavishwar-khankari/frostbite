@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getTransfers } from '../api/client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getTransfers, getWorkerStatus, pauseAllTransfers, resumeTransfers } from '../api/client'
 import TransferRow from '../components/TransferRow'
 
 function fmtTime(iso) {
@@ -15,11 +15,28 @@ const TABS = ['all', 'active', 'queued', 'completed', 'failed']
 
 export default function Transfers() {
   const [tab, setTab] = useState('all')
+  const qc = useQueryClient()
 
   const { data: transfers = [], isLoading } = useQuery({
     queryKey: ['transfers', tab],
     queryFn: () => getTransfers(tab === 'all' ? undefined : tab),
     refetchInterval: 5_000,
+  })
+
+  const { data: workerStatus } = useQuery({
+    queryKey: ['worker-status'],
+    queryFn: getWorkerStatus,
+    refetchInterval: 5_000,
+  })
+  const paused = workerStatus?.paused ?? false
+
+  const pauseAll = useMutation({
+    mutationFn: pauseAllTransfers,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transfers'] }),
+  })
+  const resume = useMutation({
+    mutationFn: resumeTransfers,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['worker-status'] }),
   })
 
   const byStatus = transfers.reduce((acc, t) => {
@@ -30,8 +47,34 @@ export default function Transfers() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Transfers</h1>
-        <span className="text-sm text-gray-500">{transfers.length} shown</span>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-white">Transfers</h1>
+          {paused && (
+            <span className="text-xs font-medium uppercase tracking-wide text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded">
+              Paused
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">{transfers.length} shown</span>
+          {paused ? (
+            <button
+              className="btn-success text-xs py-1 px-3"
+              onClick={() => resume.mutate()}
+              disabled={resume.isPending}
+            >
+              Resume
+            </button>
+          ) : (
+            <button
+              className="btn-danger text-xs py-1 px-3"
+              onClick={() => pauseAll.mutate()}
+              disabled={pauseAll.isPending}
+            >
+              Pause All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Status tabs */}

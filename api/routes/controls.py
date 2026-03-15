@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import DBSession
-from core.transfer_manager import queue_transfer
+from core.transfer_manager import is_paused, pause_all_transfers, queue_transfer, resume_transfers
 from models.schemas import ManualTransferRequest, TransferResponse
 from models.tables import MediaItem
 
@@ -38,6 +38,25 @@ async def _queue_manual(jellyfin_id: str, direction: str, db: DBSession) -> Tran
         priority=100,
     )
     return transfer
+
+
+@router.post("/transfers/pause-all")
+async def pause_all(db: DBSession) -> dict:
+    """Stop all active rclone jobs and pause the transfer worker."""
+    stopped = await pause_all_transfers(db)
+    return {"status": "paused", "stopped": stopped}
+
+
+@router.post("/transfers/resume")
+async def resume() -> dict:
+    """Resume the transfer worker."""
+    resume_transfers()
+    return {"status": "running"}
+
+
+@router.get("/transfers/worker-status")
+async def worker_status() -> dict:
+    return {"paused": is_paused()}
 
 
 @router.post("/scoring/run")

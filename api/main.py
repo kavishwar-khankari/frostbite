@@ -43,8 +43,8 @@ app = FastAPI(
 app.include_router(webhook.router)
 app.include_router(items.router, prefix="/api")
 app.include_router(status.router, prefix="/api")
+app.include_router(controls.router, prefix="/api")   # before transfers — avoids UUID param shadowing
 app.include_router(transfers.router, prefix="/api")
-app.include_router(controls.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(series.router, prefix="/api")
 app.include_router(score_history.router, prefix="/api")
