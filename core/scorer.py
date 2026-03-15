@@ -29,6 +29,14 @@ class ItemMeta:
     community_rating: float | None
 
 
+def _naive_utc(dt: datetime) -> datetime:
+    """Strip timezone info, converting to UTC first if aware."""
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 def calculate_temperature(item: ItemMeta, stats: PlaybackStats) -> float:
     """Calculate temperature score for a media item."""
     now = datetime.utcnow()
@@ -37,7 +45,7 @@ def calculate_temperature(item: ItemMeta, stats: PlaybackStats) -> float:
     # ── Factor 1: Recency Decay (0-30 points) ──
     # Exponential decay since last played. Half-life = 14 days.
     if stats.last_played_at:
-        days_since = (now - stats.last_played_at).total_seconds() / 86400
+        days_since = (now - _naive_utc(stats.last_played_at)).total_seconds() / 86400
         score += 30.0 * math.exp(-0.0495 * days_since)  # ln(2)/14 ≈ 0.0495
 
     # ── Factor 2: Play Count / Popularity (0-20 points) ──
@@ -55,7 +63,7 @@ def calculate_temperature(item: ItemMeta, stats: PlaybackStats) -> float:
 
     # ── Factor 5: Newness Boost (0-10 points) ──
     if item.date_added:
-        days_since_added = (now - item.date_added).total_seconds() / 86400
+        days_since_added = (now - _naive_utc(item.date_added)).total_seconds() / 86400
         if days_since_added < 30:
             score += 10.0 * (1 - days_since_added / 30)
 

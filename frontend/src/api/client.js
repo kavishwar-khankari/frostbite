@@ -30,8 +30,13 @@ export const overrideTemperature = (jellyfin_id, temperature) =>
   })
 
 // ── Series ────────────────────────────────────────────────────────────────
-export const getSeries = (search) =>
-  req(`/series${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+export const getSeries = (search, sort = 'temperature') => {
+  const params = new URLSearchParams()
+  if (search) params.set('search', search)
+  if (sort) params.set('sort', sort)
+  const qs = params.toString()
+  return req(`/series${qs ? `?${qs}` : ''}`)
+}
 
 // ── Transfers ────────────────────────────────────────────────────────────
 export const getTransfers = (status) =>

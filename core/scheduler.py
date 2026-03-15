@@ -101,6 +101,7 @@ async def scoring_sweep() -> None:
             select(MediaItem).where(MediaItem.tdarr_eligible == True)  # noqa: E712
         )
         items = list(result.scalars())
+        logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))
 
         for item in items:
             # Fetch stats from the materialized view if available, otherwise use zeros

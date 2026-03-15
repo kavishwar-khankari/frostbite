@@ -20,6 +20,7 @@ class MediaItemResponse(BaseModel):
     transfer_direction: str | None
     temperature: float
     last_scored_at: datetime | None
+    date_added: datetime | None
 
     model_config = {"from_attributes": True}
 
