@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql+asyncpg://frostbite:Kavi@2003@192.168.0.14:5432/frostbite"
+    database_url: str = "postgresql+asyncpg://frostbite:Kavi%402003@192.168.0.14:5432/frostbite"
 
     # rclone RC endpoints
     rclone_rc_url: str = "http://127.0.0.1:5572"
