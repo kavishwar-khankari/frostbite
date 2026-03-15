@@ -1,6 +1,12 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s  [%(name)s] %(message)s",
+)
 
 import api.deps as deps
 from api.routes import controls, dashboard, items, status, transfers, webhook, ws
