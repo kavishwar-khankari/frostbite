@@ -1,0 +1,164 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getDashboard, getScoreHistory, triggerLibrarySync } from '../api/client'
+import StatCard from '../components/StatCard'
+import TransferRow from '../components/TransferRow'
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis,
+  Tooltip, CartesianGrid, Legend,
+} from 'recharts'
+
+function fmtGB(bytes) {
+  return `${(bytes / 1e9).toFixed(1)} GB`
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+export default function Overview() {
+  const qc = useQueryClient()
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: getDashboard,
+    refetchInterval: 15_000,
+  })
+  const { data: history = [] } = useQuery({
+    queryKey: ['scoreHistory', 30],
+    queryFn: () => getScoreHistory(30),
+    refetchInterval: 60_000,
+  })
+
+  const syncMut = useMutation({
+    mutationFn: triggerLibrarySync,
+    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 3000),
+  })
+
+  const chartData = history.map(h => ({
+    date: fmtDate(h.recorded_at),
+    hot: h.hot_items,
+    cold: h.cold_items,
+    avg_temp: parseFloat(h.avg_temperature.toFixed(1)),
+  }))
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500">
+        Loading…
+      </div>
+    )
+  }
+
+  const hotPct = stats?.total_items > 0
+    ? ((stats.hot_items / stats.total_items) * 100).toFixed(0)
+    : 0
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Overview</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Live storage snapshot</p>
+        </div>
+        <button
+          className="btn-primary"
+          onClick={() => syncMut.mutate()}
+          disabled={syncMut.isPending}
+        >
+          {syncMut.isPending ? '⟳ Syncing…' : '⟳ Sync Library'}
+        </button>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Total Items"
+          value={stats?.total_items?.toLocaleString() ?? '—'}
+          sub={`${hotPct}% on NAS`}
+          accent="blue"
+        />
+        <StatCard
+          label="Hot (NAS)"
+          value={stats?.hot_items?.toLocaleString() ?? '—'}
+          sub={stats?.nas_free_gb != null ? `${stats.nas_free_gb.toFixed(1)} GB free` : ''}
+          accent="orange"
+        />
+        <StatCard
+          label="Cold (Cloud)"
+          value={stats?.cold_items?.toLocaleString() ?? '—'}
+          accent="blue"
+        />
+        <StatCard
+          label="Avg Temperature"
+          value={stats?.avg_temperature?.toFixed(1) ?? '—'}
+          sub="0 = coldest · 100 = hottest"
+          accent="purple"
+        />
+      </div>
+
+      {/* Storage bars */}
+      <div className="card space-y-3">
+        <div className="text-sm font-medium text-gray-300">Storage Usage</div>
+        {history.length > 0 && (
+          <>
+            <div>
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>NAS used</span>
+                <span>{fmtGB(history[history.length - 1]?.nas_used_bytes ?? 0)}</span>
+              </div>
+              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-orange-500 rounded-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>Cloud used</span>
+                <span>{fmtGB(history[history.length - 1]?.cloud_used_bytes ?? 0)}</span>
+              </div>
+              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-frost-500 rounded-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Score history chart */}
+      {chartData.length > 0 && (
+        <div className="card">
+          <div className="text-sm font-medium text-gray-300 mb-4">30-Day Tier History</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: '#9ca3af' }}
+              />
+              <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="hot" stroke="#f97316" dot={false} strokeWidth={1.5} name="Hot" />
+              <Line type="monotone" dataKey="cold" stroke="#38bdf8" dot={false} strokeWidth={1.5} name="Cold" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Active transfers */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium text-gray-300">Active Transfers</div>
+          <span className="text-xs text-gray-500">
+            {stats?.queued_transfers ?? 0} queued
+          </span>
+        </div>
+        {stats?.active_transfers?.length > 0 ? (
+          stats.active_transfers.map(t => <TransferRow key={t.id} transfer={t} />)
+        ) : (
+          <div className="text-sm text-gray-600 py-2">No active transfers</div>
+        )}
+      </div>
+    </div>
+  )
+}

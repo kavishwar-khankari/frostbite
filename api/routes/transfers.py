@@ -44,3 +44,24 @@ async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
     await db.commit()
     await db.refresh(transfer)
     return transfer
+
+
+@router.post("/transfers/{transfer_id}/retry", response_model=TransferResponse)
+async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
+    from core.transfer_manager import queue_transfer
+
+    result = await db.execute(select(Transfer).where(Transfer.id == transfer_id))
+    transfer = result.scalar_one_or_none()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    if transfer.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Cannot retry transfer in status '{transfer.status}'")
+
+    new_transfer = await queue_transfer(
+        db=db,
+        media_item_id=transfer.media_item_id,
+        direction=transfer.direction,
+        trigger="manual",
+        priority=100,
+    )
+    return new_transfer

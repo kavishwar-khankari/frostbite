@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded-full;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-frost-600 hover:bg-frost-500 text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-gray-800 text-gray-300;
+  }
+  .btn-danger {
+    @apply btn bg-red-900/40 hover:bg-red-800/60 text-red-300;
+  }
+  .btn-success {
+    @apply btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300;
+  }
+  .input {
+    @apply bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-frost-500 focus:border-frost-500;
+  }
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+  .badge-hot {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-900/50 text-orange-300 border border-orange-800/50;
+  }
+  .badge-cold {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-frost-900/50 text-frost-300 border border-frost-800/50;
+  }
+  .badge-transferring {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-800/50;
+  }
+}

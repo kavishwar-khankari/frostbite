@@ -1,7 +1,9 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,10 +11,10 @@ logging.basicConfig(
 )
 
 import api.deps as deps
-from api.routes import controls, dashboard, items, status, transfers, webhook, ws
+from api.routes import controls, dashboard, items, score_history, series, settings, status, transfers, webhook, ws
 from core.jellyfin_client import JellyfinClient
+from core.runtime_settings import load_overrides
 from core.scheduler import start_scheduler, stop_scheduler
-from core.tdarr_client import TdarrClient
 from core.transfer_manager import TransferManager
 from models.database import engine
 
@@ -23,6 +25,7 @@ async def lifespan(app: FastAPI):
     deps._jellyfin_client = JellyfinClient()
     deps._transfer_manager = TransferManager()
 
+    await load_overrides()
     await start_scheduler()
     yield
     await stop_scheduler()
@@ -42,9 +45,18 @@ app.include_router(status.router, prefix="/api")
 app.include_router(transfers.router, prefix="/api")
 app.include_router(controls.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(series.router, prefix="/api")
+app.include_router(score_history.router, prefix="/api")
+app.include_router(settings.router, prefix="/api")
 app.include_router(ws.router)
 
 
 @app.get("/healthz")
 async def health() -> dict:
     return {"ok": True}
+
+
+# Serve the React SPA — must be last so API routes take precedence
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")
