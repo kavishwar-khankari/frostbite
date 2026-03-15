@@ -32,15 +32,21 @@ function FilterBtn({ active, onClick, children }) {
   )
 }
 
+const PAGE_SIZE = 200
+
 export default function Transfers() {
   const [tab, setTab] = useState('all')
   const [search, setSearch] = useState('')
-  const [dirFilter, setDirFilter] = useState('')      // '' | 'freeze' | 'reheat'
-  const [triggerFilter, setTriggerFilter] = useState('') // '' | 'auto_score' | 'manual' | 'space_pressure'
-  const [sort, setSort] = useState('queued_at')
+  const [dirFilter, setDirFilter] = useState('')
+  const [triggerFilter, setTriggerFilter] = useState('')
+  const [sort, setSort] = useState('priority')
   const [order, setOrder] = useState('desc')
+  const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState(new Set())
   const qc = useQueryClient()
+
+  // Reset to page 0 when any filter/sort changes
+  const resetOffset = () => setOffset(0)
 
   const queryParams = {
     ...(tab !== 'all' && { status: tab }),
@@ -48,13 +54,18 @@ export default function Transfers() {
     ...(triggerFilter && { trigger: triggerFilter }),
     sort,
     order,
+    limit: PAGE_SIZE,
+    offset,
   }
 
-  const { data: transfers = [], isLoading } = useQuery({
+  const { data: page = { items: [], total: 0 }, isLoading } = useQuery({
     queryKey: ['transfers', queryParams],
     queryFn: () => getTransfers(queryParams),
     refetchInterval: 5_000,
   })
+
+  const transfers = page.items ?? []
+  const totalCount = page.total ?? 0
 
   const { data: workerStatus } = useQuery({
     queryKey: ['worker-status'],
@@ -63,23 +74,25 @@ export default function Transfers() {
   })
   const paused = workerStatus?.paused ?? false
 
-  // Client-side search (title search on already-fetched data)
+  // Client-side search filters within the current page
   const displayed = useMemo(() => {
     if (!search.trim()) return transfers
     const q = search.toLowerCase()
     return transfers.filter(t => {
-      const title = t.item_title ?? t.id
-      const series = t.item_series_name ?? ''
-      return title.toLowerCase().includes(q) || series.toLowerCase().includes(q)
+      const title = (t.item_title ?? t.id).toLowerCase()
+      const series = (t.item_series_name ?? '').toLowerCase()
+      return title.includes(q) || series.includes(q)
     })
   }, [transfers, search])
 
+  // byStatus counts are from the current page only — used for active/completed tabs
+  // For queued tab, totalCount is the real number from the backend
   const byStatus = transfers.reduce((acc, t) => {
     acc[t.status] = (acc[t.status] ?? 0) + 1
     return acc
   }, {})
 
-  const allIds = displayed.map(t => t.id)
+  const allIds = transfers.map(t => t.id)
   const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id))
   const someSelected = selected.size > 0
 
@@ -126,7 +139,11 @@ export default function Transfers() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{displayed.length} shown</span>
+          <span className="text-sm text-gray-500">
+          {totalCount > PAGE_SIZE
+            ? `${offset + 1}–${Math.min(offset + transfers.length, totalCount)} of ${totalCount.toLocaleString()}`
+            : `${totalCount.toLocaleString()} total`}
+        </span>
           {paused ? (
             <button className="btn-success text-xs py-1 px-3" onClick={() => resume.mutate()} disabled={resume.isPending}>
               Resume
@@ -222,11 +239,12 @@ export default function Transfers() {
                 ? 'border-frost-500 text-frost-300 font-medium'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
-            onClick={() => setTab(t)}
+            onClick={() => { setTab(t); resetOffset() }}
           >
             {t}
-            {byStatus[t] && (
-              <span className="ml-1.5 text-xs text-gray-600">({byStatus[t]})</span>
+            {/* For the active tab show real total, otherwise page counts */}
+            {t === tab && totalCount > 0 && (
+              <span className="ml-1.5 text-xs text-gray-600">({totalCount.toLocaleString()})</span>
             )}
           </button>
         ))}
@@ -235,7 +253,7 @@ export default function Transfers() {
       {/* Transfers list */}
       <div className="card p-0 divide-y divide-gray-800/50">
         {/* Select-all header */}
-        {displayed.length > 0 && (
+        {transfers.length > 0 && (
           <div className="px-4 py-2 flex items-center gap-3 bg-gray-800/20">
             <input
               type="checkbox"
@@ -244,7 +262,7 @@ export default function Transfers() {
               className="rounded bg-gray-700 border-gray-600"
             />
             <span className="text-xs text-gray-500">
-              {allSelected ? 'Deselect all' : `Select all ${displayed.length}`}
+              {allSelected ? 'Deselect all' : `Select all ${transfers.length}`}
             </span>
           </div>
         )}
@@ -252,12 +270,12 @@ export default function Transfers() {
         {isLoading && (
           <div className="px-4 py-8 text-center text-gray-600 text-sm">Loading…</div>
         )}
-        {!isLoading && displayed.length === 0 && (
+        {!isLoading && transfers.length === 0 && (
           <div className="px-4 py-8 text-center text-gray-600 text-sm">
             No transfers match your filters
           </div>
         )}
-        {displayed.map(t => (
+        {transfers.map(t => (
           <div key={t.id} className={`px-4 transition-colors ${selected.has(t.id) ? 'bg-frost-900/10' : ''}`}>
             <div className="flex items-center gap-2">
               <input
@@ -279,6 +297,29 @@ export default function Transfers() {
           </div>
         ))}
       </div>
+
+      {/* Pagination */}
+      {totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>{offset + 1}–{Math.min(offset + transfers.length, totalCount)} of {totalCount.toLocaleString()}</span>
+          <div className="flex gap-2">
+            <button
+              className="btn-ghost text-xs py-1 px-3"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            >
+              ← Prev
+            </button>
+            <button
+              className="btn-ghost text-xs py-1 px-3"
+              disabled={offset + PAGE_SIZE >= totalCount}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

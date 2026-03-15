@@ -184,7 +184,7 @@ async def _start_next(db: AsyncSession, direction: str) -> None:
     result = await db.execute(
         select(Transfer)
         .where(Transfer.status == "queued", Transfer.direction == direction)
-        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc())
+        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc(), Transfer.id.asc())
         .limit(1)
     )
     transfer = result.scalar_one_or_none()
@@ -217,7 +217,7 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
     # ── Pre-flight guard 2: source file must exist ────────────────────────────
     if transfer.direction == "freeze":
         src_fs = f"{settings.nas_root}/"
-        dst_fs = f"{settings.rclone_remote}:media/"
+        dst_fs = f"{settings.rclone_remote}:"
         nas_path = os.path.join(settings.nas_root, rel_path)
         if not os.path.isfile(nas_path):
             transfer.status = "failed"
@@ -225,7 +225,7 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
             logger.error("Transfer %s: file missing on NAS: %s", transfer.id, nas_path)
             return
     else:
-        src_fs = f"{settings.rclone_remote}:media/"
+        src_fs = f"{settings.rclone_remote}:"
         dst_fs = f"{settings.nas_root}/"
 
     try:
@@ -315,7 +315,7 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(f"{settings.rclone_rc_url}/operations/stat", json={
-                "fs": f"{settings.rclone_remote}:media/",
+                "fs": f"{settings.rclone_remote}:",
                 "remote": file_path,
             })
             if resp.status_code != 200:

@@ -46,6 +46,14 @@ export const getTransfers = (params = {}) => {
   return req(`/transfers${qs ? `?${qs}` : ''}`)
 }
 
+export const getTransferCount = (params = {}) => {
+  const p = { ...params, limit: 0, offset: 0 }
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(p).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return req(`/transfers${qs ? `?${qs}` : ''}`)
+}
+
 export const bulkCancelTransfers = (ids) =>
   req('/transfers/bulk-cancel', { method: 'POST', body: JSON.stringify({ ids }) })
 

@@ -2,12 +2,12 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from api.deps import DBSession
 from core.transfer_manager import stop_rclone_job
-from models.schemas import TransferResponse
+from models.schemas import TransferPage, TransferResponse
 from models.tables import MediaItem, Transfer
 
 router = APIRouter()
@@ -20,7 +20,7 @@ def _resp(transfer: Transfer) -> TransferResponse:
     return TransferResponse.from_orm_with_item(transfer, item)
 
 
-@router.get("/transfers", response_model=list[TransferResponse])
+@router.get("/transfers", response_model=TransferPage)
 async def list_transfers(
     db: DBSession,
     status: str | None = Query(None),
@@ -28,21 +28,34 @@ async def list_transfers(
     trigger: str | None = Query(None, description="auto_score, manual, space_pressure"),
     sort: str = Query("queued_at", description="queued_at, priority"),
     order: str = Query("desc", description="asc or desc"),
-    limit: int = Query(200, le=500),
-) -> list[TransferResponse]:
-    q = select(Transfer).options(_WITH_ITEM)
-    if status:
-        q = q.where(Transfer.status == status)
-    if direction:
-        q = q.where(Transfer.direction == direction)
-    if trigger:
-        q = q.where(Transfer.trigger == trigger)
+    limit: int = Query(200, le=2000),
+    offset: int = Query(0, ge=0),
+) -> TransferPage:
+    # Base filter (reused for both count and items query)
+    def _apply_filters(q):
+        if status:
+            q = q.where(Transfer.status == status)
+        if direction:
+            q = q.where(Transfer.direction == direction)
+        if trigger:
+            q = q.where(Transfer.trigger == trigger)
+        return q
 
+    # Total count
+    count_q = _apply_filters(select(func.count()).select_from(Transfer))
+    total = (await db.execute(count_q)).scalar_one()
+
+    # Items
     sort_col = Transfer.priority if sort == "priority" else Transfer.queued_at
-    q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc()).limit(limit)
+    order_clause = sort_col.desc() if order == "desc" else sort_col.asc()
+    items_q = _apply_filters(select(Transfer).options(_WITH_ITEM))
+    items_q = items_q.order_by(order_clause, Transfer.queued_at.asc(), Transfer.id.asc())
+    items_q = items_q.limit(limit).offset(offset)
 
-    result = await db.execute(q)
-    return [_resp(t) for t in result.scalars().unique().all()]
+    result = await db.execute(items_q)
+    items = [_resp(t) for t in result.scalars().unique().all()]
+
+    return TransferPage(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/transfers/{transfer_id}", response_model=TransferResponse)

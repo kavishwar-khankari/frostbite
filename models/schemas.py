@@ -87,6 +87,14 @@ class TransferResponse(BaseModel):
         return cls(**d)
 
 
+class TransferPage(BaseModel):
+    """Paginated transfer list with total count."""
+    items: list[TransferResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class ManualTransferRequest(BaseModel):
     jellyfin_id: str
     direction: str  # 'freeze' or 'reheat'

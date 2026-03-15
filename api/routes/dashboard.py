@@ -46,7 +46,7 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
         select(Transfer)
         .options(_WITH_ITEM)
         .where(Transfer.status == "queued")
-        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc())
+        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc(), Transfer.id.asc())
         .limit(10)
     )
     queued_transfers_list = list(queued_list_result.scalars().unique().all())

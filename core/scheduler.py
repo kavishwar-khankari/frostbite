@@ -98,17 +98,17 @@ async def scoring_sweep() -> None:
         items = list(result.scalars())
         logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))
 
-        # Fetch item IDs that already have a pending transfer so we don't
-        # append duplicates on every sweep. This is the primary guard against
-        # the 11k+ queued transfers accumulation bug.
+        # Fetch all pending transfers keyed by media_item_id so we can both
+        # avoid duplicates AND cancel stale transfers when scores change.
         pending_result = await db.execute(
-            select(Transfer.media_item_id).where(
-                Transfer.status.in_(["queued", "active"])
-            )
+            select(Transfer).where(Transfer.status.in_(["queued", "active"]))
         )
-        pending_ids: set = set(pending_result.scalars())
+        # dict: media_item_id -> list[Transfer]
+        pending_by_item: dict = {}
+        for t in pending_result.scalars():
+            pending_by_item.setdefault(t.media_item_id, []).append(t)
 
-        queued_freeze = queued_reheat = 0
+        queued_freeze = queued_reheat = cancelled_stale = 0
         for item in items:
             # Fetch stats from the materialized view if available, otherwise use zeros
             stats_row = None
@@ -138,23 +138,39 @@ async def scoring_sweep() -> None:
             item.temperature = new_temp
             item.last_scored_at = datetime.utcnow()
 
-            # Queue transfers — skip if item already has a pending transfer
-            if item.id in pending_ids:
+            existing = pending_by_item.get(item.id, [])
+
+            # Cancel stale QUEUED (not active) transfers whose direction no
+            # longer makes sense after rescoring.
+            for t in list(existing):
+                if t.status != "queued":
+                    continue
+                if t.direction == "freeze" and new_temp >= settings.freeze_threshold:
+                    t.status = "cancelled"
+                    existing.remove(t)
+                    cancelled_stale += 1
+                elif t.direction == "reheat" and new_temp <= settings.reheat_threshold:
+                    t.status = "cancelled"
+                    existing.remove(t)
+                    cancelled_stale += 1
+
+            # Skip if still has a live pending transfer after cleanup
+            if existing:
                 continue
 
             if item.storage_tier == "hot" and new_temp < settings.freeze_threshold:
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
-                pending_ids.add(item.id)
+                pending_by_item[item.id] = [True]  # sentinel — prevents double-queue
                 queued_freeze += 1
             elif item.storage_tier == "cold" and new_temp > settings.reheat_threshold:
                 await queue_transfer(db, item.id, "reheat", "auto_score", priority=int(new_temp - settings.reheat_threshold))
-                pending_ids.add(item.id)
+                pending_by_item[item.id] = [True]
                 queued_reheat += 1
 
         await db.commit()
         logger.info(
-            "Scoring sweep complete: %d rescored, +%d freeze / +%d reheat queued",
-            len(items), queued_freeze, queued_reheat,
+            "Scoring sweep complete: %d rescored, +%d freeze / +%d reheat queued, %d stale cancelled",
+            len(items), queued_freeze, queued_reheat, cancelled_stale,
         )
 
 
