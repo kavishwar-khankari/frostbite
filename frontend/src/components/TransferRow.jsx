@@ -56,10 +56,15 @@ export default function TransferRow({ transfer }) {
     <div className="flex items-center gap-3 py-2.5 border-b border-gray-800/60 last:border-0">
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-white truncate">
-          {isEpisode && transfer.item_series_name
-            ? <><span className="text-gray-400">{transfer.item_series_name}</span> — {title}</>
-            : title
-          }
+          {isEpisode && transfer.item_series_name ? (
+            <>
+              <span className="text-gray-400">{transfer.item_series_name}</span>
+              {transfer.item_season_number != null && (
+                <><span className="text-gray-600"> — </span><span className="text-gray-500">Season {transfer.item_season_number}</span></>
+              )}
+              <span className="text-gray-600"> — </span>{title}
+            </>
+          ) : title}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className={`text-xs font-medium uppercase tracking-wide ${STATUS_COLOR[transfer.status] || 'text-gray-400'}`}>

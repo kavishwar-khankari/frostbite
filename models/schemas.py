@@ -58,6 +58,7 @@ class TransferResponse(BaseModel):
     # Media item info (populated via joinedload)
     item_title: str | None = None
     item_series_name: str | None = None
+    item_season_number: int | None = None
     item_type: str | None = None
 
     model_config = {"from_attributes": True}
@@ -83,6 +84,7 @@ class TransferResponse(BaseModel):
         if item:
             d["item_title"] = item.title
             d["item_series_name"] = item.series_name
+            d["item_season_number"] = item.season_number
             d["item_type"] = item.item_type
         return cls(**d)
 
