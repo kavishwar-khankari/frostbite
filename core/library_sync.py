@@ -137,11 +137,19 @@ async def run_library_sync() -> dict:
     path_map = await _fetch_path_map()
     stats = {"total": 0, "new": 0, "updated": 0, "unmatched": 0}
 
+    # os.walk() on a FUSE/mergerfs mount is blocking and slow.
+    # Run it entirely in a thread so the event loop stays free for health checks.
+    logger.info("Library sync: scanning filesystem (this may take a minute)...")
+    all_files: list[tuple[str, str, int]] = await asyncio.to_thread(
+        lambda: list(iter_media_files())
+    )
+    logger.info("Library sync: found %d files on disk", len(all_files))
+
     async with async_session_factory() as db:
-        for full_path, _rel_path, size_bytes in iter_media_files():
+        for full_path, _rel_path, size_bytes in all_files:
             stats["total"] += 1
 
-            # Yield to event loop every 100 files so health checks aren't starved
+            # Yield to event loop every 100 files
             if stats["total"] % 100 == 0:
                 await asyncio.sleep(0)
 
