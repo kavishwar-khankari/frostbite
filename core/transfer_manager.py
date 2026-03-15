@@ -1,0 +1,318 @@
+"""rclone RC integration and transfer queue management.
+
+Transfers are stored in PostgreSQL. An asyncio background loop
+picks them off the queue and executes them via rclone RC.
+"""
+
+import asyncio
+import logging
+import uuid
+from datetime import datetime
+
+import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.routes.ws import broadcast
+from config import settings
+from models.database import async_session_factory
+from models.tables import MediaItem, Transfer
+
+logger = logging.getLogger(__name__)
+
+_MAX_ACTIVE_REHEATS = settings.max_concurrent_reheats
+_MAX_ACTIVE_FREEZES = settings.max_concurrent_freezes
+
+# Background task handle
+_worker_task: asyncio.Task | None = None
+
+
+class TransferManager:
+    """Thin facade so deps.py can hold a typed singleton reference.
+    All actual logic lives in the module-level functions below."""
+    pass
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+async def queue_transfer(
+    db: AsyncSession,
+    media_item_id: uuid.UUID,
+    direction: str,
+    trigger: str,
+    priority: int = 50,
+) -> Transfer:
+    """Insert a transfer record and return it. Caller must commit."""
+    item_result = await db.execute(select(MediaItem).where(MediaItem.id == media_item_id))
+    item = item_result.scalar_one()
+
+    if direction == "freeze":
+        source = item.file_path
+        dest = item.file_path
+    else:
+        source = item.file_path
+        dest = item.file_path
+
+    transfer = Transfer(
+        media_item_id=media_item_id,
+        direction=direction,
+        trigger=trigger,
+        priority=priority,
+        status="queued",
+        source_path=source,
+        dest_path=dest,
+    )
+    db.add(transfer)
+    await db.flush()
+    return transfer
+
+
+# ── Worker loop ───────────────────────────────────────────────────────────────
+
+async def start_worker() -> None:
+    global _worker_task
+    _worker_task = asyncio.create_task(_transfer_loop(), name="transfer-worker")
+    logger.info("Transfer worker started")
+
+
+async def stop_worker() -> None:
+    if _worker_task:
+        _worker_task.cancel()
+        try:
+            await _worker_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _transfer_loop() -> None:
+    while True:
+        try:
+            await _process_queue()
+        except Exception:
+            logger.exception("Transfer loop error")
+        await asyncio.sleep(5)
+
+
+async def _process_queue() -> None:
+    async with async_session_factory() as db:
+        # Count active transfers by direction
+        active_result = await db.execute(
+            select(Transfer).where(Transfer.status == "active")
+        )
+        active = list(active_result.scalars())
+        active_reheats = sum(1 for t in active if t.direction == "reheat")
+        active_freezes = sum(1 for t in active if t.direction == "freeze")
+
+        # Poll progress on active transfers
+        for t in active:
+            await _poll_transfer(db, t)
+
+        # Pick next queued transfer
+        if active_reheats < _MAX_ACTIVE_REHEATS:
+            await _start_next(db, "reheat")
+        if active_freezes < _MAX_ACTIVE_FREEZES:
+            if _freeze_window_active():
+                await _start_next(db, "freeze")
+
+        await db.commit()
+
+
+def _freeze_window_active() -> bool:
+    from datetime import timezone
+    import zoneinfo
+    ist = zoneinfo.ZoneInfo("Asia/Kolkata")
+    hour = datetime.now(tz=ist).hour
+    return settings.freeze_window_start <= hour < settings.freeze_window_end
+
+
+async def _start_next(db: AsyncSession, direction: str) -> None:
+    result = await db.execute(
+        select(Transfer)
+        .where(Transfer.status == "queued", Transfer.direction == direction)
+        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc())
+        .limit(1)
+    )
+    transfer = result.scalar_one_or_none()
+    if transfer:
+        await _execute_transfer(db, transfer)
+
+
+async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
+    item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
+    item = item_result.scalar_one()
+
+    if transfer.direction == "freeze":
+        src_fs = f"{settings.nas_root}/"
+        dst_fs = f"{settings.rclone_remote}:media/"
+    else:
+        src_fs = f"{settings.rclone_remote}:media/"
+        dst_fs = f"{settings.nas_root}/"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/sync/copy", json={
+                "srcFs": src_fs,
+                "dstFs": dst_fs,
+                "srcRemote": transfer.source_path,
+                "dstRemote": transfer.dest_path,
+                "_async": True,
+                "_group": f"frostbite-{transfer.id}",
+            })
+            resp.raise_for_status()
+            job = resp.json()
+
+        transfer.rclone_job_id = job.get("jobid")
+        transfer.rclone_group = f"frostbite-{transfer.id}"
+        transfer.status = "active"
+        transfer.started_at = datetime.utcnow()
+
+        item.storage_tier = "transferring"
+        item.transfer_direction = transfer.direction
+
+        logger.info("Started %s for %s (job=%s)", transfer.direction, item.title, transfer.rclone_job_id)
+        await broadcast({"type": "transfer_start", "transfer_id": str(transfer.id), "title": item.title})
+
+    except Exception as exc:
+        logger.error("Failed to start transfer %s: %s", transfer.id, exc)
+        transfer.status = "failed"
+        transfer.error_message = str(exc)
+
+
+async def _poll_transfer(db: AsyncSession, transfer: Transfer) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/core/stats", json={
+                "group": transfer.rclone_group
+            })
+            stats = resp.json()
+    except Exception as exc:
+        logger.warning("Failed to poll transfer %s: %s", transfer.id, exc)
+        return
+
+    transfer.bytes_transferred = stats.get("bytes", 0)
+    transfer.bytes_total = stats.get("totalBytes", 0)
+    transfer.speed_bps = int(stats.get("speed", 0))
+    transfer.eta_seconds = stats.get("eta")
+
+    # Check if the rclone job finished
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/job/status", json={
+                "jobid": transfer.rclone_job_id
+            })
+            job_status = resp.json()
+    except Exception:
+        return
+
+    if job_status.get("finished"):
+        if job_status.get("error"):
+            transfer.status = "failed"
+            transfer.error_message = job_status["error"]
+            logger.error("Transfer %s failed: %s", transfer.id, transfer.error_message)
+        else:
+            transfer.status = "completed"
+            transfer.completed_at = datetime.utcnow()
+            await _on_transfer_complete(db, transfer)
+
+    await broadcast({
+        "type": "transfer_progress",
+        "transfer_id": str(transfer.id),
+        "bytes_transferred": transfer.bytes_transferred,
+        "bytes_total": transfer.bytes_total,
+        "speed_bps": transfer.speed_bps,
+        "eta_seconds": transfer.eta_seconds,
+    })
+
+
+async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
+    """
+    Confirm the file exists on the cloud remote and its size matches.
+    Uses rclone RC operations/stat against the transfer daemon (5572).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/operations/stat", json={
+                "fs": f"{settings.rclone_remote}:media/",
+                "remote": file_path,
+            })
+            if resp.status_code != 200:
+                return False
+            stat = resp.json()
+            remote_size = stat.get("item", {}).get("Size", -1)
+            if expected_size > 0 and remote_size != expected_size:
+                logger.warning(
+                    "Size mismatch for %s: NAS=%d cloud=%d", file_path, expected_size, remote_size
+                )
+                return False
+            return True
+    except Exception as exc:
+        logger.warning("Cloud verification failed for %s: %s", file_path, exc)
+        return False
+
+
+async def _delete_nas_copy(file_path: str) -> bool:
+    """
+    Delete the NAS copy of a file after a successful freeze + verification.
+    Uses rclone RC so we stay consistent — no direct os.remove().
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/operations/deletefile", json={
+                "fs": f"{settings.nas_root}/",
+                "remote": file_path,
+            })
+            resp.raise_for_status()
+            logger.info("Deleted NAS copy: %s", file_path)
+            return True
+    except Exception as exc:
+        logger.error("Failed to delete NAS copy of %s: %s", file_path, exc)
+        return False
+
+
+async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
+    item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
+    item = item_result.scalar_one()
+
+    if transfer.direction == "freeze":
+        # Verify the cloud copy exists and size matches before deleting from NAS
+        verified = await _verify_cloud_copy(transfer.dest_path, item.file_size_bytes)
+        if not verified:
+            transfer.status = "failed"
+            transfer.error_message = "Cloud verification failed — NAS copy retained"
+            item.storage_tier = "hot"
+            item.transfer_direction = None
+            logger.error("Freeze verification failed for %s — NAS copy kept", item.title)
+            await broadcast({
+                "type": "transfer_failed",
+                "transfer_id": str(transfer.id),
+                "title": item.title,
+                "reason": "cloud_verification_failed",
+            })
+            return
+
+        # Verified — safe to delete NAS copy
+        deleted = await _delete_nas_copy(transfer.source_path)
+        if not deleted:
+            # Cloud copy is there but we couldn't delete NAS — not fatal,
+            # mark as cold anyway (mergerfs will prefer NAS copy on reads which is fine)
+            logger.warning("Could not delete NAS copy of %s, marking cold anyway", item.title)
+
+        new_tier = "cold"
+
+    else:
+        # Reheat — file is now on NAS, cloud copy stays as backup
+        new_tier = "hot"
+
+    item.storage_tier = new_tier
+    item.transfer_direction = None
+
+    # Invalidate rclone VFS cache so the mount sees the change immediately
+    parent_dir = "/".join(transfer.dest_path.split("/")[:-1])
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"{settings.rclone_vfs_url}/vfs/forget", json={"dir": parent_dir})
+    except Exception as exc:
+        logger.warning("VFS cache invalidation failed: %s", exc)
+
+    logger.info("Transfer complete: %s is now %s", item.title, new_tier)
+    await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title, "tier": new_tier})

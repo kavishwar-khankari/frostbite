@@ -1,0 +1,60 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout frostbite repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate image tag
+        id: tag
+        run: echo "tag=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            coooolkpk/frostbite:latest
+            coooolkpk/frostbite:${{ steps.tag.outputs.tag }}
+          cache-from: type=registry,ref=coooolkpk/frostbite:latest
+          cache-to: type=inline
+
+      # ── Update k8s manifest in homelab repo ──────────────────────────────────
+      - name: Checkout kubernetes-homelab repo
+        uses: actions/checkout@v4
+        with:
+          repository: kavishwar-khankari/kubernetes-homelab
+          token: ${{ secrets.HOMELAB_REPO_TOKEN }}
+          path: kubernetes-homelab
+
+      - name: Update image tag in deployment manifest
+        run: |
+          sed -i "s|coooolkpk/frostbite:.*|coooolkpk/frostbite:${{ steps.tag.outputs.tag }}|g" \
+            kubernetes-homelab/manifests/frostbite/deployment.yaml
+
+      - name: Commit and push updated manifest
+        run: |
+          cd kubernetes-homelab
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifests/frostbite/deployment.yaml
+          git commit -m "chore: bump frostbite image to ${{ steps.tag.outputs.tag }}"
+          git push
