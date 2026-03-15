@@ -15,8 +15,11 @@ export function useWebSocket() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data)
-          // Invalidate relevant queries based on event type
-          if (msg.type === 'transfer_update' || msg.type === 'stats_update') {
+          if (
+            msg.type === 'transfer_start' ||
+            msg.type === 'transfer_complete' ||
+            msg.type === 'transfer_failed'
+          ) {
             queryClient.invalidateQueries({ queryKey: ['dashboard'] })
             queryClient.invalidateQueries({ queryKey: ['transfers'] })
           }

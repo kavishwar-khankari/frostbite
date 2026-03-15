@@ -390,14 +390,26 @@ async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
     item.transfer_direction = None
 
     # Invalidate rclone VFS cache on ALL nodes that mount the cloud remote.
-    # vfs/refresh actively re-reads from the remote (stronger than vfs/forget which
-    # only marks entries stale and relies on the kernel dentry cache expiring).
-    parent_dir = "/".join(transfer.dest_path.split("/")[:-1])
+    # vfs/refresh only works on directories already in the VFS cache. If the
+    # immediate parent hasn't been listed yet, rclone returns HTTP 200 with
+    # {"result": {"dir": "file does not exist"}}. In that case we walk up to
+    # the grandparent (series dir) which is always cached, then retry.
+    parts = transfer.dest_path.split("/")
+    parent_dir = "/".join(parts[:-1])        # e.g. series/anime/Show/Season 4
+    grandparent_dir = "/".join(parts[:-2])   # e.g. series/anime/Show
+
     vfs_urls = [u.strip() for u in settings.rclone_vfs_urls.split(",") if u.strip()]
     async with httpx.AsyncClient(timeout=10) as client:
         for vfs_url in vfs_urls:
             try:
-                await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
+                resp = await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
+                body = resp.json()
+                # If rclone doesn't have a cache entry for this dir, refresh the
+                # grandparent first so it discovers the season directory, then retry.
+                if any("does not exist" in str(v) for v in body.get("result", {}).values()):
+                    logger.debug("VFS refresh: %s not cached on %s, refreshing grandparent", parent_dir, vfs_url)
+                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": grandparent_dir})
+                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
             except Exception as exc:
                 logger.warning("VFS cache refresh failed for %s: %s", vfs_url, exc)
 

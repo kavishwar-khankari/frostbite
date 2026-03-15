@@ -48,6 +48,18 @@ export default function Transfers() {
   // Reset to page 0 when any filter/sort changes
   const resetOffset = () => setOffset(0)
 
+  const switchTab = (t) => {
+    setTab(t)
+    setOffset(0)
+    if (t === 'completed') {
+      setSort('completed_at')
+      setOrder('desc')
+    } else if (tab === 'completed') {
+      setSort('priority')
+      setOrder('desc')
+    }
+  }
+
   const queryParams = {
     ...(tab !== 'all' && { status: tab }),
     ...(dirFilter && { direction: dirFilter }),
@@ -191,6 +203,7 @@ export default function Transfers() {
           >
             <option value="queued_at">Queued time</option>
             <option value="priority">Priority</option>
+            <option value="completed_at">Completed time</option>
           </select>
           <button
             onClick={() => setOrder(o => o === 'desc' ? 'asc' : 'desc')}
@@ -239,7 +252,7 @@ export default function Transfers() {
                 ? 'border-frost-500 text-frost-300 font-medium'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
             }`}
-            onClick={() => { setTab(t); resetOffset() }}
+            onClick={() => switchTab(t)}
           >
             {t}
             {/* For the active tab show real total, otherwise page counts */}

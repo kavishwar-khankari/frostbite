@@ -46,7 +46,12 @@ async def list_transfers(
     total = (await db.execute(count_q)).scalar_one()
 
     # Items
-    sort_col = Transfer.priority if sort == "priority" else Transfer.queued_at
+    if sort == "priority":
+        sort_col = Transfer.priority
+    elif sort == "completed_at":
+        sort_col = Transfer.completed_at
+    else:
+        sort_col = Transfer.queued_at
     order_clause = sort_col.desc() if order == "desc" else sort_col.asc()
     items_q = _apply_filters(select(Transfer).options(_WITH_ITEM))
     items_q = items_q.order_by(order_clause, Transfer.queued_at.asc(), Transfer.id.asc())

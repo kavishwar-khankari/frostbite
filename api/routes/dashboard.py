@@ -36,20 +36,35 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
     )
     active_transfers = list(active_result.scalars().unique().all())
 
-    # Queued count + first 10 queued transfers for preview
+    # Queued count + first upcoming transfers per direction
     queued_result = await db.execute(
         select(func.count()).where(Transfer.status == "queued")
     )
     queued_count = queued_result.scalar_one()
 
-    queued_list_result = await db.execute(
+    _ORDER = [Transfer.priority.desc(), Transfer.queued_at.asc(), Transfer.id.asc()]
+
+    freeze_list_result = await db.execute(
         select(Transfer)
         .options(_WITH_ITEM)
-        .where(Transfer.status == "queued")
-        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc(), Transfer.id.asc())
+        .where(Transfer.status == "queued", Transfer.direction == "freeze")
+        .order_by(*_ORDER)
         .limit(10)
     )
-    queued_transfers_list = list(queued_list_result.scalars().unique().all())
+    reheat_list_result = await db.execute(
+        select(Transfer)
+        .options(_WITH_ITEM)
+        .where(Transfer.status == "queued", Transfer.direction == "reheat")
+        .order_by(*_ORDER)
+        .limit(10)
+    )
+    # Interleave: freeze[0], reheat[0], freeze[1], reheat[1], ... up to 10 total
+    freezes = list(freeze_list_result.scalars().unique().all())
+    reheats = list(reheat_list_result.scalars().unique().all())
+    queued_transfers_list = [
+        t for pair in zip(freezes, reheats) for t in pair
+    ] + freezes[len(reheats):] + reheats[len(freezes):]
+    queued_transfers_list = queued_transfers_list[:10]
 
     # Tdarr-eligible count
     tdarr_result = await db.execute(
