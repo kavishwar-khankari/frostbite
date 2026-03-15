@@ -97,33 +97,92 @@ class PlaybackEventIn(BaseModel):
 
     @classmethod
     def from_webhook(cls, payload: dict) -> "PlaybackEventIn":
+        # Jellyfin sends a flat JSON via the manual Handlebars template.
+        # All values arrive as top-level keys.  Nested Item/Session dicts
+        # are kept as fallbacks in case someone points a stock webhook at us.
         item = payload.get("Item") or {}
         session = payload.get("Session") or {}
-        media_streams = item.get("MediaStreams") or []
 
-        # Resolve file path from MediaSources if available
+        def _int(val: object) -> int | None:
+            """Safely coerce string/float/None → int."""
+            try:
+                return int(val) if val not in (None, "", "0") else None
+            except (TypeError, ValueError):
+                return None
+
+        # Nested MediaSources path (stock webhook) → not available in flat mode.
+        # Flat template: Jellyfin exposes {{ItemPath}} or {{Path}}.
         sources = item.get("MediaSources") or []
-        file_path = sources[0].get("Path") if sources else item.get("Path")
+        file_path = (
+            sources[0].get("Path") if sources
+            else item.get("Path")
+            or payload.get("ItemPath")
+            or payload.get("Path")
+        )
 
         return cls(
-            jellyfin_id=item.get("Id") or payload.get("ItemId", ""),
-            user_id=session.get("UserId") or payload.get("UserId", ""),
-            username=session.get("UserName") or payload.get("NotificationUsername"),
+            jellyfin_id=(
+                payload.get("ItemId")
+                or item.get("Id")
+                or ""
+            ),
+            user_id=(
+                payload.get("UserId")
+                or session.get("UserId")
+                or ""
+            ),
+            username=(
+                payload.get("NotificationUsername")
+                or session.get("UserName")
+            ),
             event_type={
                 "PlaybackStart": "start",
                 "PlaybackStop": "stop",
                 "PlaybackProgress": "progress",
             }.get(payload.get("NotificationType", ""), "unknown"),
-            play_method=session.get("PlayState", {}).get("PlayMethod"),
-            position_ticks=session.get("PlayState", {}).get("PositionTicks"),
-            duration_ticks=item.get("RunTimeTicks"),
-            client_name=session.get("Client"),
-            device_name=session.get("DeviceName"),
-            item_type=item.get("Type", "").lower() or None,
-            title=item.get("Name"),
-            series_id=item.get("SeriesId"),
-            series_name=item.get("SeriesName"),
-            season_number=item.get("ParentIndexNumber"),
-            episode_number=item.get("IndexNumber"),
+            play_method=(
+                payload.get("PlayMethod")
+                or session.get("PlayState", {}).get("PlayMethod")
+            ),
+            position_ticks=_int(
+                payload.get("PositionTicks")
+                or payload.get("PlaybackPositionTicks")
+                or session.get("PlayState", {}).get("PositionTicks")
+            ),
+            duration_ticks=_int(
+                payload.get("RunTimeTicks")
+                or item.get("RunTimeTicks")
+            ),
+            client_name=(
+                payload.get("ClientName")
+                or session.get("Client")
+            ),
+            device_name=(
+                payload.get("DeviceName")
+                or session.get("DeviceName")
+            ),
+            item_type=(
+                (payload.get("ItemType") or item.get("Type") or "").lower() or None
+            ),
+            title=(
+                payload.get("ItemName")
+                or item.get("Name")
+            ),
+            series_id=(
+                payload.get("SeriesId")
+                or item.get("SeriesId")
+            ),
+            series_name=(
+                payload.get("SeriesName")
+                or item.get("SeriesName")
+            ),
+            season_number=_int(
+                payload.get("SeasonNumber")
+                or item.get("ParentIndexNumber")
+            ),
+            episode_number=_int(
+                payload.get("EpisodeNumber")
+                or item.get("IndexNumber")
+            ),
             file_path=file_path,
         )

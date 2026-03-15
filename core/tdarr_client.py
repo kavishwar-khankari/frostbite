@@ -72,12 +72,16 @@ class TdarrClient:
                             "docFilter": {
                                 "TranscodeDecisionMaker": {"$in": list(_ELIGIBLE_STATUSES)}
                             },
-                            "findLimit": 10000,
+                            "limit": 10000,
                         }
                     },
                 )
                 resp.raise_for_status()
-                return resp.json().get("docs") or []
+                data = resp.json()
+                # Tdarr returns either {array} directly or {docs: array} depending on version
+                if isinstance(data, list):
+                    return data
+                return data.get("docs") or data.get("array") or []
         except httpx.HTTPError as exc:
             logger.warning("Tdarr bulk fetch failed: %s", exc)
             return []
