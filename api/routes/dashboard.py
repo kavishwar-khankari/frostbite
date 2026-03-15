@@ -2,10 +2,13 @@ import os
 
 from fastapi import APIRouter
 from sqlalchemy import case, func, select
+from sqlalchemy.orm import joinedload
 
 from api.deps import DBSession
 from models.schemas import DashboardStats, TransferResponse
 from models.tables import MediaItem, Transfer
+
+_WITH_ITEM = joinedload(Transfer.media_item)
 
 router = APIRouter()
 
@@ -27,16 +30,32 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
     # Active transfers
     active_result = await db.execute(
         select(Transfer)
+        .options(_WITH_ITEM)
         .where(Transfer.status == "active")
         .order_by(Transfer.started_at.desc())
     )
-    active_transfers = list(active_result.scalars().all())
+    active_transfers = list(active_result.scalars().unique().all())
 
-    # Queued count
+    # Queued count + first 10 queued transfers for preview
     queued_result = await db.execute(
         select(func.count()).where(Transfer.status == "queued")
     )
     queued_count = queued_result.scalar_one()
+
+    queued_list_result = await db.execute(
+        select(Transfer)
+        .options(_WITH_ITEM)
+        .where(Transfer.status == "queued")
+        .order_by(Transfer.priority.desc(), Transfer.queued_at.asc())
+        .limit(10)
+    )
+    queued_transfers_list = list(queued_list_result.scalars().unique().all())
+
+    # Tdarr-eligible count
+    tdarr_result = await db.execute(
+        select(func.count()).where(MediaItem.tdarr_eligible == True)  # noqa: E712
+    )
+    tdarr_eligible_count = tdarr_result.scalar_one()
 
     # NAS free space
     nas_free_gb = 0.0
@@ -53,6 +72,8 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
         transferring_items=row.transferring or 0,
         avg_temperature=float(row.avg_temp or 0.0),
         nas_free_gb=nas_free_gb,
-        active_transfers=[TransferResponse.model_validate(t) for t in active_transfers],
+        active_transfers=[TransferResponse.from_orm_with_item(t, t.media_item) for t in active_transfers],
         queued_transfers=queued_count,
+        queued_transfer_list=[TransferResponse.from_orm_with_item(t, t.media_item) for t in queued_transfers_list],
+        tdarr_eligible_count=tdarr_eligible_count,
     )

@@ -36,8 +36,8 @@ class MediaItem(Base):
     tdarr_status: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 'pending', 'encoding', 'done', 'not_required'
 
     # Storage state
-    storage_tier: Mapped[str] = mapped_column(String(10), nullable=False, default="hot")
-    transfer_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    storage_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="hot")
+    transfer_direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Scoring
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)

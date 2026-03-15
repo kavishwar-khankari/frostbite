@@ -49,15 +49,24 @@ export default function TransferRow({ transfer }) {
   const canCancel = ['queued', 'active'].includes(transfer.status)
   const canRetry  = ['failed', 'cancelled'].includes(transfer.status)
 
+  const title = transfer.item_title ?? transfer.id
+  const isEpisode = transfer.item_type === 'episode'
+
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-gray-800/60 last:border-0">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="text-sm font-medium text-white truncate">
+          {isEpisode && transfer.item_series_name
+            ? <><span className="text-gray-400">{transfer.item_series_name}</span> — {title}</>
+            : title
+          }
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
           <span className={`text-xs font-medium uppercase tracking-wide ${STATUS_COLOR[transfer.status] || 'text-gray-400'}`}>
             {transfer.status}
           </span>
           <span className="text-xs text-gray-500">
-            {transfer.direction === 'freeze' ? '→ Cold' : '→ Hot'}
+            {transfer.direction === 'freeze' ? '❄️ → Cold' : '🔥 → Hot'}
           </span>
           <span className="text-xs text-gray-600">
             {transfer.trigger}

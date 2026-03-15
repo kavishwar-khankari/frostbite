@@ -2,38 +2,55 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from api.deps import DBSession
 from models.schemas import TransferResponse
-from models.tables import Transfer
+from models.tables import MediaItem, Transfer
 
 router = APIRouter()
+
+_WITH_ITEM = joinedload(Transfer.media_item)
+
+
+def _resp(transfer: Transfer) -> TransferResponse:
+    item = transfer.media_item if transfer.media_item else None
+    return TransferResponse.from_orm_with_item(transfer, item)
 
 
 @router.get("/transfers", response_model=list[TransferResponse])
 async def list_transfers(
     db: DBSession,
     status: str | None = None,
-) -> list[Transfer]:
-    q = select(Transfer).order_by(Transfer.queued_at.desc()).limit(200)
+) -> list[TransferResponse]:
+    q = (
+        select(Transfer)
+        .options(_WITH_ITEM)
+        .order_by(Transfer.queued_at.desc())
+        .limit(200)
+    )
     if status:
         q = q.where(Transfer.status == status)
     result = await db.execute(q)
-    return list(result.scalars().all())
+    return [_resp(t) for t in result.scalars().unique().all()]
 
 
 @router.get("/transfers/{transfer_id}", response_model=TransferResponse)
-async def get_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
-    result = await db.execute(select(Transfer).where(Transfer.id == transfer_id))
+async def get_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferResponse:
+    result = await db.execute(
+        select(Transfer).options(_WITH_ITEM).where(Transfer.id == transfer_id)
+    )
     transfer = result.scalar_one_or_none()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
-    return transfer
+    return _resp(transfer)
 
 
 @router.post("/transfers/{transfer_id}/cancel", response_model=TransferResponse)
-async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
-    result = await db.execute(select(Transfer).where(Transfer.id == transfer_id))
+async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferResponse:
+    result = await db.execute(
+        select(Transfer).options(_WITH_ITEM).where(Transfer.id == transfer_id)
+    )
     transfer = result.scalar_one_or_none()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
@@ -43,14 +60,16 @@ async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
     transfer.status = "cancelled"
     await db.commit()
     await db.refresh(transfer)
-    return transfer
+    return _resp(transfer)
 
 
 @router.post("/transfers/{transfer_id}/retry", response_model=TransferResponse)
-async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
+async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferResponse:
     from core.transfer_manager import queue_transfer
 
-    result = await db.execute(select(Transfer).where(Transfer.id == transfer_id))
+    result = await db.execute(
+        select(Transfer).options(_WITH_ITEM).where(Transfer.id == transfer_id)
+    )
     transfer = result.scalar_one_or_none()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
@@ -64,4 +83,8 @@ async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> Transfer:
         trigger="manual",
         priority=100,
     )
-    return new_transfer
+    # Reload with item
+    reload = await db.execute(
+        select(Transfer).options(_WITH_ITEM).where(Transfer.id == new_transfer.id)
+    )
+    return _resp(reload.scalar_one())

@@ -66,9 +66,6 @@ export default function Transfers() {
         )}
         {transfers.map(t => (
           <div key={t.id} className="px-4">
-            <div className="text-xs text-gray-600 pt-2 font-mono truncate">
-              {t.id}
-            </div>
             <TransferRow transfer={t} />
             <div className="flex gap-4 pb-2 text-xs text-gray-600">
               <span>Queued: {fmtTime(t.queued_at)}</span>

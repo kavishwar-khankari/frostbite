@@ -9,7 +9,11 @@ import {
 
 function fmtDate(iso) {
   const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const mo = d.getMonth() + 1
+  const day = d.getDate()
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${mo}/${day} ${h}:${m}`
 }
 
 const BINS = [
@@ -95,7 +99,7 @@ export default function Analytics() {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} />
             <Tooltip {...CHART_STYLE} />
             <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
@@ -111,7 +115,7 @@ export default function Analytics() {
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} interval="preserveStartEnd" />
             <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#6b7280' }} />
             <Tooltip {...CHART_STYLE} />
             <Line type="monotone" dataKey="avg_temp" stroke="#a78bfa" dot={false} strokeWidth={2} name="Avg Temp" />
@@ -135,7 +139,7 @@ export default function Analytics() {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} />
             <Tooltip {...CHART_STYLE} />
             <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />

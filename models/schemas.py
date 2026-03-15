@@ -21,6 +21,8 @@ class MediaItemResponse(BaseModel):
     temperature: float
     last_scored_at: datetime | None
     date_added: datetime | None
+    tdarr_eligible: bool
+    tdarr_status: str | None
 
     model_config = {"from_attributes": True}
 
@@ -53,8 +55,36 @@ class TransferResponse(BaseModel):
     queued_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    # Media item info (populated via joinedload)
+    item_title: str | None = None
+    item_series_name: str | None = None
+    item_type: str | None = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_with_item(cls, t, item) -> "TransferResponse":
+        d = {
+            "id": t.id,
+            "media_item_id": t.media_item_id,
+            "direction": t.direction,
+            "trigger": t.trigger,
+            "priority": t.priority,
+            "status": t.status,
+            "bytes_transferred": t.bytes_transferred,
+            "bytes_total": t.bytes_total,
+            "speed_bps": t.speed_bps,
+            "eta_seconds": t.eta_seconds,
+            "error_message": t.error_message,
+            "queued_at": t.queued_at,
+            "started_at": t.started_at,
+            "completed_at": t.completed_at,
+        }
+        if item:
+            d["item_title"] = item.title
+            d["item_series_name"] = item.series_name
+            d["item_type"] = item.item_type
+        return cls(**d)
 
 
 class ManualTransferRequest(BaseModel):
@@ -73,6 +103,8 @@ class DashboardStats(BaseModel):
     nas_free_gb: float
     active_transfers: list[TransferResponse]
     queued_transfers: int
+    queued_transfer_list: list[TransferResponse] = []
+    tdarr_eligible_count: int = 0
 
 
 # ── Webhook (Jellyfin) ───────────────────────────────────────────────────────

@@ -11,9 +11,18 @@ function fmtGB(bytes) {
   return `${(bytes / 1e9).toFixed(1)} GB`
 }
 
-function fmtDate(iso) {
+function fmtDateTime(iso) {
   const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const mo = d.getMonth() + 1
+  const day = d.getDate()
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${mo}/${day} ${h}:${m}`
+}
+
+const CHART_STYLE = {
+  contentStyle: { backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 },
+  labelStyle: { color: '#9ca3af' },
 }
 
 export default function Overview() {
@@ -33,30 +42,27 @@ export default function Overview() {
     mutationFn: triggerLibrarySync,
     onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 3000),
   })
-
   const scoreMut = useMutation({
     mutationFn: triggerScoringRun,
     onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 20_000),
   })
 
   const chartData = history.map(h => ({
-    date: fmtDate(h.recorded_at),
+    date: fmtDateTime(h.recorded_at),
     hot: h.hot_items,
     cold: h.cold_items,
     avg_temp: parseFloat(h.avg_temperature.toFixed(1)),
   }))
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-500">
-        Loading…
-      </div>
-    )
+    return <div className="flex items-center justify-center h-full text-gray-500">Loading…</div>
   }
 
   const hotPct = stats?.total_items > 0
-    ? ((stats.hot_items / stats.total_items) * 100).toFixed(0)
-    : 0
+    ? ((stats.hot_items / stats.total_items) * 100).toFixed(1)
+    : '0.0'
+
+  const lastSnap = history[history.length - 1]
 
   return (
     <div className="p-6 space-y-6">
@@ -67,19 +73,11 @@ export default function Overview() {
           <p className="text-sm text-gray-500 mt-0.5">Live storage snapshot</p>
         </div>
         <div className="flex gap-2">
-          <button
-            className="btn-ghost"
-            onClick={() => scoreMut.mutate()}
-            disabled={scoreMut.isPending}
-            title="Runs the temperature scoring sweep immediately"
-          >
+          <button className="btn-ghost" onClick={() => scoreMut.mutate()} disabled={scoreMut.isPending}
+            title="Runs the temperature scoring sweep immediately">
             {scoreMut.isPending ? '⟳ Scoring…' : '🌡 Score Now'}
           </button>
-          <button
-            className="btn-primary"
-            onClick={() => syncMut.mutate()}
-            disabled={syncMut.isPending}
-          >
+          <button className="btn-primary" onClick={() => syncMut.mutate()} disabled={syncMut.isPending}>
             {syncMut.isPending ? '⟳ Syncing…' : '⟳ Sync Library'}
           </button>
         </div>
@@ -112,15 +110,31 @@ export default function Overview() {
         />
       </div>
 
+      {/* Secondary stats row */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard
+          label="Tdarr Eligible"
+          value={stats?.tdarr_eligible_count?.toLocaleString() ?? '—'}
+          sub="files ready for scoring/freezing"
+          accent="green"
+        />
+        <StatCard
+          label="Transferring"
+          value={stats?.transferring_items?.toLocaleString() ?? '—'}
+          sub={`${stats?.queued_transfers ?? 0} queued`}
+          accent="purple"
+        />
+      </div>
+
       {/* Storage bars */}
       <div className="card space-y-3">
         <div className="text-sm font-medium text-gray-300">Storage Usage</div>
-        {history.length > 0 && (
+        {lastSnap && (
           <>
             <div>
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>NAS used</span>
-                <span>{fmtGB(history[history.length - 1]?.nas_used_bytes ?? 0)}</span>
+                <span>{fmtGB(lastSnap.nas_used_bytes ?? 0)}</span>
               </div>
               <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div className="h-full bg-orange-500 rounded-full" style={{ width: '100%' }} />
@@ -129,7 +143,7 @@ export default function Overview() {
             <div>
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>Cloud used</span>
-                <span>{fmtGB(history[history.length - 1]?.cloud_used_bytes ?? 0)}</span>
+                <span>{fmtGB(lastSnap.cloud_used_bytes ?? 0)}</span>
               </div>
               <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div className="h-full bg-frost-500 rounded-full" style={{ width: '100%' }} />
@@ -146,12 +160,9 @@ export default function Overview() {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: '#9ca3af' }}
-              />
+              <Tooltip {...CHART_STYLE} />
               <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
               <Line type="monotone" dataKey="hot" stroke="#f97316" dot={false} strokeWidth={1.5} name="Hot" />
               <Line type="monotone" dataKey="cold" stroke="#38bdf8" dot={false} strokeWidth={1.5} name="Cold" />
@@ -164,9 +175,6 @@ export default function Overview() {
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-medium text-gray-300">Active Transfers</div>
-          <span className="text-xs text-gray-500">
-            {stats?.queued_transfers ?? 0} queued
-          </span>
         </div>
         {stats?.active_transfers?.length > 0 ? (
           stats.active_transfers.map(t => <TransferRow key={t.id} transfer={t} />)
@@ -174,6 +182,17 @@ export default function Overview() {
           <div className="text-sm text-gray-600 py-2">No active transfers</div>
         )}
       </div>
+
+      {/* Upcoming (queued) transfers */}
+      {stats?.queued_transfer_list?.length > 0 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium text-gray-300">Upcoming Transfers</div>
+            <span className="text-xs text-gray-500">{stats.queued_transfers} in queue</span>
+          </div>
+          {stats.queued_transfer_list.map(t => <TransferRow key={t.id} transfer={t} />)}
+        </div>
+      )}
     </div>
   )
 }

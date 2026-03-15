@@ -16,6 +16,18 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function TdarrBadge({ eligible, status }) {
+  if (!eligible && !status) return <span className="text-xs text-gray-700">—</span>
+  const map = {
+    done:         'text-emerald-400',
+    not_required: 'text-gray-500',
+    encoding:     'text-yellow-400 animate-pulse',
+    pending:      'text-gray-400',
+  }
+  const label = status === 'not_required' ? 'skip' : (status ?? (eligible ? 'eligible' : '—'))
+  return <span className={`text-xs font-mono ${map[status] ?? 'text-gray-400'}`}>{label}</span>
+}
+
 // ── Single item row ─────────────────────────────────────────────────────────
 function ItemRow({ item, selected, onSelect }) {
   const qc = useQueryClient()
@@ -73,6 +85,9 @@ function ItemRow({ item, selected, onSelect }) {
             <TemperatureBar value={item.temperature} />
           </button>
         )}
+      </td>
+      <td className="px-3 py-2.5 text-center">
+        <TdarrBadge eligible={item.tdarr_eligible} status={item.tdarr_status} />
       </td>
       <td className="px-3 py-2.5 text-xs text-gray-400 text-right tabular-nums">{fmtSize(item.file_size_bytes)}</td>
       <td className="px-3 py-2.5 text-xs text-gray-500 text-right">{fmtDate(item.date_added)}</td>
@@ -349,6 +364,7 @@ export default function Library() {
                 <th className="px-3 py-2.5 text-left">Title</th>
                 <th className="px-3 py-2.5 text-center">Tier</th>
                 <th className="px-3 py-2.5 text-left w-32">Temp</th>
+                <th className="px-3 py-2.5 text-center">Tdarr</th>
                 <th className="px-3 py-2.5 text-right">Size</th>
                 <th className="px-3 py-2.5 text-right">Added</th>
                 <th className="px-3 py-2.5 w-20" />
@@ -359,7 +375,7 @@ export default function Library() {
                 <ItemRow key={item.id} item={item} selected={selected.has(item.jellyfin_id)} onSelect={toggleSelect} />
               ))}
               {items.length === 0 && !itemsQuery.isLoading && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-600 text-sm">No items found</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-sm">No items found</td></tr>
               )}
             </tbody>
           </table>
