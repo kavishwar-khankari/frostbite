@@ -16,12 +16,13 @@ File paths in the DB are stored as absolute paths as reported by Jellyfin
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 import httpx
 
 from config import settings
-from core.filesystem import get_storage_tier, iter_media_files
+from core.filesystem import iter_media_files
 from models.database import async_session_factory
 from models.tables import MediaItem
 from sqlalchemy import select
@@ -150,8 +151,9 @@ async def run_library_sync() -> dict:
                 logger.debug("Library sync: no Jellyfin match for %s", _rel_path)
                 continue
 
-            # Run blocking subprocess in thread pool so the event loop stays free
-            tier = await asyncio.to_thread(get_storage_tier, full_path)
+            # Fast tier check: if the file exists on NAS, it's hot. No subprocess.
+            rel = os.path.relpath(full_path, settings.media_root)
+            tier = "hot" if os.path.exists(os.path.join(settings.nas_root, rel)) else "cold"
 
             result = await db.execute(
                 select(MediaItem).where(MediaItem.jellyfin_id == compact["jellyfin_id"])

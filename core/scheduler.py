@@ -186,7 +186,7 @@ async def cleanup_stale_transfers() -> None:
 async def scheduled_library_sync() -> None:
     """Daily library sync at 3:00 IST — walk filesystem and upsert into media_items."""
     from core.library_sync import run_library_sync
-    await run_library_sync()
+    await run_library_sync()  # scheduler already runs in the background
 
 
 async def record_score_snapshot() -> None:
