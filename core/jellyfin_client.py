@@ -55,5 +55,35 @@ class JellyfinClient:
             logger.warning("Jellyfin find_by_path failed: %s", exc)
         return None
 
+    async def get_all_items(
+        self,
+        item_types: str = "Movie,Episode",
+        fields: str = (
+            "MediaSources,SeriesId,SeriesName,"
+            "DateCreated,PremiereDate,CommunityRating,"
+            "ParentIndexNumber,IndexNumber"
+        ),
+    ) -> list[dict]:
+        """Fetch every Movie and Episode from Jellyfin with pagination (500/page)."""
+        all_items: list[dict] = []
+        limit = 500
+        start = 0
+        while True:
+            data = await self._get(
+                "/Items",
+                Recursive=True,
+                IncludeItemTypes=item_types,
+                Fields=fields,
+                StartIndex=start,
+                Limit=limit,
+            )
+            page = data.get("Items") or []
+            all_items.extend(page)
+            total = data.get("TotalRecordCount", 0)
+            start += len(page)
+            if not page or start >= total:
+                break
+        return all_items
+
     async def get_users(self) -> list[dict]:
         return await self._get("/Users")

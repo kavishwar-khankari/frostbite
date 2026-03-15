@@ -27,6 +27,13 @@ async def _queue_manual(jellyfin_id: str, direction: str, db: DBSession) -> Tran
     return transfer
 
 
+@router.post("/sync/library")
+async def trigger_library_sync() -> dict:
+    """Trigger a full library sync (filesystem → Jellyfin → DB). Runs in-process."""
+    from core.library_sync import run_library_sync
+    return await run_library_sync()
+
+
 @router.post("/reheat", response_model=TransferResponse)
 async def manual_reheat(body: ManualTransferRequest, db: DBSession) -> TransferResponse:
     return await _queue_manual(body.jellyfin_id, "reheat", db)

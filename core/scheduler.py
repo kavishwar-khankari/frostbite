@@ -25,6 +25,7 @@ async def start_scheduler() -> None:
     _scheduler.add_job(check_nas_space, "interval", minutes=5, id="nas_space")
     _scheduler.add_job(cleanup_stale_transfers, "interval", hours=1, id="stale_cleanup")
     _scheduler.add_job(record_score_snapshot, "interval", minutes=30, id="score_snapshot")
+    _scheduler.add_job(scheduled_library_sync, "cron", hour=3, minute=0, id="library_sync")
     _scheduler.start()
     await start_worker()
     logger.info("Scheduler started")
@@ -57,9 +58,16 @@ async def sync_tdarr_eligibility() -> None:
         )
         newly_eligible = 0
         for item in result.scalars():
-            # item.file_path is relative — construct absolute NAS path to match Tdarr
-            abs_path = f"{settings.nas_root}/{item.file_path}"
-            if abs_path in done_paths:
+            # file_path is absolute (e.g. /mnt/merged/media/...).
+            # Tdarr may use a different mount — fall back to suffix matching.
+            match = item.file_path in done_paths
+            if not match:
+                try:
+                    rel = os.path.relpath(item.file_path, settings.media_root)
+                    match = any(p.endswith(rel) for p in done_paths)
+                except ValueError:
+                    pass
+            if match:
                 item.tdarr_eligible = True
                 item.tdarr_status = "done"
                 newly_eligible += 1
@@ -168,6 +176,12 @@ async def cleanup_stale_transfers() -> None:
         if stale:
             logger.warning("Cleaned up %d stale transfers", len(stale))
         await db.commit()
+
+
+async def scheduled_library_sync() -> None:
+    """Daily library sync at 3:00 IST — walk filesystem and upsert into media_items."""
+    from core.library_sync import run_library_sync
+    await run_library_sync()
 
 
 async def record_score_snapshot() -> None:
