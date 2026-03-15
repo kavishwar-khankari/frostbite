@@ -389,13 +389,17 @@ async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
     item.storage_tier = new_tier
     item.transfer_direction = None
 
-    # Invalidate rclone VFS cache so the mount sees the change immediately
+    # Invalidate rclone VFS cache on ALL nodes that mount the cloud remote.
+    # vfs/refresh actively re-reads from the remote (stronger than vfs/forget which
+    # only marks entries stale and relies on the kernel dentry cache expiring).
     parent_dir = "/".join(transfer.dest_path.split("/")[:-1])
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            await client.post(f"{settings.rclone_vfs_url}/vfs/forget", json={"dir": parent_dir})
-    except Exception as exc:
-        logger.warning("VFS cache invalidation failed: %s", exc)
+    vfs_urls = [u.strip() for u in settings.rclone_vfs_urls.split(",") if u.strip()]
+    async with httpx.AsyncClient(timeout=10) as client:
+        for vfs_url in vfs_urls:
+            try:
+                await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
+            except Exception as exc:
+                logger.warning("VFS cache refresh failed for %s: %s", vfs_url, exc)
 
     logger.info("Transfer complete: %s is now %s", item.title, new_tier)
     await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title, "tier": new_tier})

@@ -7,7 +7,10 @@ class Settings(BaseSettings):
 
     # rclone RC endpoints
     rclone_rc_url: str = "http://127.0.0.1:5572"
-    rclone_vfs_url: str = "http://127.0.0.1:5573"
+    # Comma-separated VFS RC endpoints for every node that mounts the cloud remote.
+    # After each freeze/reheat, Frostbite calls vfs/refresh on all of them so every
+    # node sees the change immediately (node1=161, node2=162, node3=163/Jellyfin).
+    rclone_vfs_urls: str = "http://192.168.0.161:5573,http://192.168.0.162:5573,http://192.168.0.163:5573"
     rclone_remote: str = "opendrive-crypt"
 
     # Paths
