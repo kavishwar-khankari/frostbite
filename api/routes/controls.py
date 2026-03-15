@@ -114,6 +114,18 @@ async def trigger_tdarr_sync() -> dict:
     return {"status": "started"}
 
 
+@router.post("/playback/import-history")
+async def import_playback_history() -> dict:
+    """
+    Trigger a full reimport of all historical play sessions from the Jellyfin
+    Playback Reporting plugin.  Resets the sync cursor so everything is
+    re-fetched from the beginning of time.  Runs in the background.
+    """
+    from core.playback_import import sync_playback_from_reporting
+    asyncio.get_event_loop().create_task(sync_playback_from_reporting(full_reimport=True))
+    return {"status": "started"}
+
+
 @router.post("/scoring/run")
 async def trigger_scoring_sweep() -> dict:
     """Trigger a scoring sweep immediately in the background."""

@@ -10,6 +10,7 @@ from sqlalchemy import func, select, text
 from config import settings
 from core.filesystem import nas_free_bytes
 from core.tdarr_client import TdarrClient
+from core.playback_import import sync_playback_from_reporting
 from core.transfer_manager import queue_transfer, start_worker, stop_worker
 from models.database import async_session_factory
 from models.tables import MediaItem, ScoreHistory, Transfer
@@ -20,7 +21,7 @@ _scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 async def start_scheduler() -> None:
     _scheduler.add_job(sync_tdarr_eligibility, "interval", minutes=10, id="tdarr_sync")
-    _scheduler.add_job(refresh_playback_stats, "interval", minutes=5, id="refresh_stats")
+    _scheduler.add_job(sync_playback_from_reporting, "interval", minutes=5, id="playback_sync")
     _scheduler.add_job(scoring_sweep, "interval", minutes=15, id="scoring_sweep")
     _scheduler.add_job(check_nas_space, "interval", minutes=5, id="nas_space")
     _scheduler.add_job(cleanup_stale_transfers, "interval", hours=1, id="stale_cleanup")
@@ -81,15 +82,6 @@ async def sync_tdarr_eligibility() -> None:
         if newly_eligible:
             await db.commit()
             logger.info("Tdarr sync: %d items newly eligible for scoring", newly_eligible)
-
-async def refresh_playback_stats() -> None:
-    """Refresh the item_playback_stats materialized view."""
-    async with async_session_factory() as db:
-        try:
-            await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY item_playback_stats"))
-            await db.commit()
-        except Exception as exc:
-            logger.warning("Failed to refresh playback stats: %s", exc)
 
 
 async def scoring_sweep() -> None:

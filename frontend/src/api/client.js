@@ -98,6 +98,9 @@ export const triggerScoringRun = () =>
 export const triggerTdarrSync = () =>
   req('/tdarr/sync', { method: 'POST' })
 
+export const importPlaybackHistory = () =>
+  req('/playback/import-history', { method: 'POST' })
+
 // ── Score history ────────────────────────────────────────────────────────
 export const getScoreHistory = (days = 30) =>
   req(`/score-history?days=${days}`)

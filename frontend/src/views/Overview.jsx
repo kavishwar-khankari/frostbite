@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getDashboard, getScoreHistory, getSettings, triggerLibrarySync, triggerScoringRun, triggerTdarrSync } from '../api/client'
+import { getDashboard, getScoreHistory, getSettings, triggerLibrarySync, triggerScoringRun, triggerTdarrSync, importPlaybackHistory } from '../api/client'
 import StatCard from '../components/StatCard'
 import TransferRow from '../components/TransferRow'
 import {
@@ -58,6 +58,10 @@ export default function Overview() {
     mutationFn: triggerTdarrSync,
     onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 15_000),
   })
+  const importHistoryMut = useMutation({
+    mutationFn: importPlaybackHistory,
+    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 30_000),
+  })
 
   const chartData = history.map(h => ({
     date: fmtDateTime(h.recorded_at),
@@ -85,6 +89,10 @@ export default function Overview() {
           <p className="text-sm text-gray-500 mt-0.5">Live storage snapshot</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => importHistoryMut.mutate()} disabled={importHistoryMut.isPending}
+            title="Re-import all play history from Jellyfin Playback Reporting plugin (resets sync cursor)">
+            {importHistoryMut.isPending ? '⟳ Importing…' : '📥 Reimport History'}
+          </button>
           <button className="btn-ghost" onClick={() => tdarrSyncMut.mutate()} disabled={tdarrSyncMut.isPending}
             title="Pull latest eligibility data from Tdarr">
             {tdarrSyncMut.isPending ? '⟳ Syncing…' : '⟳ Tdarr Sync'}
