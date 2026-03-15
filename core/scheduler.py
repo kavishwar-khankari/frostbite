@@ -63,12 +63,13 @@ async def sync_tdarr_eligibility() -> None:
         )
         newly_eligible = 0
         for item in result.scalars():
-            # file_path is absolute (e.g. /mnt/merged/media/...).
-            # Tdarr may use a different mount — fall back to suffix matching.
+            # file_path uses Jellyfin's internal prefix (e.g. /media_2/...).
+            # Tdarr may use a different mount — try exact match first,
+            # then suffix match on the relative portion.
             match = item.file_path in done_paths
             if not match:
                 try:
-                    rel = os.path.relpath(item.file_path, settings.media_root)
+                    rel = os.path.relpath(item.file_path, settings.jellyfin_media_root)
                     match = any(p.endswith(rel) for p in done_paths)
                 except ValueError:
                     pass

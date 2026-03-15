@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     media_root: str = "/mnt/merged/media"
     nas_root: str = "/mnt/nas/media"
     cloud_root: str = "/mnt/cloud/media"
+    # Path prefix that Jellyfin uses internally for media files.
+    # Jellyfin may mount media at a different path than the host (e.g. /media_2).
+    # Used to translate Jellyfin paths → host NAS paths for tier detection.
+    jellyfin_media_root: str = "/media_2"
 
     # Jellyfin
     jellyfin_url: str = "https://jellyfin.techtronics.top"

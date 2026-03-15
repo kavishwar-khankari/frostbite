@@ -156,9 +156,11 @@ async def run_library_sync() -> dict:
             if not file_path:
                 continue
 
-            # Tier: check NAS path directly (local disk, fast)
+            # Tier: translate Jellyfin's internal path to the host NAS path.
+            # Jellyfin mounts media at jellyfin_media_root (e.g. /media_2),
+            # which maps to nas_root (e.g. /mnt/nas/media) on the host.
             try:
-                rel = os.path.relpath(file_path, settings.media_root)
+                rel = os.path.relpath(file_path, settings.jellyfin_media_root)
                 nas_path = os.path.join(settings.nas_root, rel)
                 tier = "hot" if os.path.exists(nas_path) else "cold"
             except ValueError:
