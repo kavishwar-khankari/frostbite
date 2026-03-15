@@ -14,6 +14,7 @@ File paths in the DB are stored as absolute paths as reported by Jellyfin
 (e.g. /mnt/merged/media/TV/Show/S01/ep.mkv).
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -139,13 +140,18 @@ async def run_library_sync() -> dict:
         for full_path, _rel_path, size_bytes in iter_media_files():
             stats["total"] += 1
 
+            # Yield to event loop every 100 files so health checks aren't starved
+            if stats["total"] % 100 == 0:
+                await asyncio.sleep(0)
+
             compact = path_map.get(full_path)
             if compact is None:
                 stats["unmatched"] += 1
                 logger.debug("Library sync: no Jellyfin match for %s", _rel_path)
                 continue
 
-            tier = get_storage_tier(full_path)
+            # Run blocking subprocess in thread pool so the event loop stays free
+            tier = await asyncio.to_thread(get_storage_tier, full_path)
 
             result = await db.execute(
                 select(MediaItem).where(MediaItem.jellyfin_id == compact["jellyfin_id"])
@@ -181,6 +187,10 @@ async def run_library_sync() -> dict:
                     community_rating=compact["community_rating"],
                 ))
                 stats["new"] += 1
+
+            # Commit in batches of 500 to avoid holding a huge transaction
+            if stats["total"] % 500 == 0:
+                await db.commit()
 
         await db.commit()
 
