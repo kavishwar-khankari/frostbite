@@ -192,11 +192,12 @@ async def scheduled_library_sync() -> None:
 async def record_score_snapshot() -> None:
     """Record an aggregate snapshot for dashboard historical charts."""
     async with async_session_factory() as db:
+        from sqlalchemy import case
         result = await db.execute(
             select(
                 func.count().label("total"),
-                func.sum((MediaItem.storage_tier == "hot").cast("integer")).label("hot"),
-                func.sum((MediaItem.storage_tier == "cold").cast("integer")).label("cold"),
+                func.sum(case((MediaItem.storage_tier == "hot", 1), else_=0)).label("hot"),
+                func.sum(case((MediaItem.storage_tier == "cold", 1), else_=0)).label("cold"),
                 func.avg(MediaItem.temperature).label("avg_temp"),
             )
         )

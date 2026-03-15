@@ -149,9 +149,15 @@ async def run_library_sync() -> dict:
         for full_path, _rel_path, size_bytes in all_files:
             stats["total"] += 1
 
-            # Yield to event loop every 100 files
+            # Yield to event loop every 100 files and log progress every 500
             if stats["total"] % 100 == 0:
                 await asyncio.sleep(0)
+            if stats["total"] % 500 == 0:
+                logger.info(
+                    "Library sync progress: %d/%d files (new=%d, updated=%d, unmatched=%d)",
+                    stats["total"], len(all_files),
+                    stats["new"], stats["updated"], stats["unmatched"],
+                )
 
             compact = path_map.get(full_path)
             if compact is None:
