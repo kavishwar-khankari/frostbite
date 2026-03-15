@@ -102,7 +102,7 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
       than the last cursor, append to playback_events.
     """
     headers = {
-        "Authorization": f"MediaBrowser Token={settings.jellyfin_api_key}",
+        "Authorization": f'MediaBrowser Token="{settings.jellyfin_api_key}"',
         "Content-Type": "application/json",
     }
 
