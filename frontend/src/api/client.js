@@ -64,6 +64,9 @@ export const bulkReheat = (jellyfin_ids) =>
 export const triggerLibrarySync = () =>
   req('/sync/library', { method: 'POST' })
 
+export const triggerScoringRun = () =>
+  req('/scoring/run', { method: 'POST' })
+
 // ── Score history ────────────────────────────────────────────────────────
 export const getScoreHistory = (days = 30) =>
   req(`/score-history?days=${days}`)

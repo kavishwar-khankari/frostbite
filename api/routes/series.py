@@ -1,6 +1,5 @@
 """Series aggregation endpoint — groups episodes by series and season."""
 
-import asyncio
 import os
 
 from fastapi import APIRouter, Query
@@ -14,14 +13,34 @@ from models.tables import MediaItem
 router = APIRouter()
 
 
-def _extract_library(file_path: str) -> str:
-    """Return the top-level folder name under jellyfin_media_root.
-    e.g. /media_2/ANIME/Show/... → 'ANIME'
+def _extract_library(file_path: str, series_name: str | None = None) -> str:
+    """Return the most specific library folder name under jellyfin_media_root.
+
+    Strategy: walk path segments from the left; stop just before the segment
+    that matches the series name (case-insensitive prefix). Return the last
+    segment before that — which is the actual library folder.
+
+    Examples:
+      /media_2/anime/Bleach/...             → 'anime'
+      /media_2/series/web series/Suits/...  → 'web series'
+      /media_2/series/indian/Radhakrishn/.. → 'indian'
     """
     try:
         rel = os.path.relpath(file_path, settings.jellyfin_media_root)
-        top = rel.split(os.sep)[0]
-        return top if top != "." else "Other"
+        parts = [p for p in rel.split(os.sep) if p]
+        if not parts:
+            return "Other"
+        if series_name:
+            sn_lower = series_name.lower()
+            for i, part in enumerate(parts):
+                if sn_lower in part.lower() or part.lower() in sn_lower:
+                    # everything before index i is the library path
+                    lib_parts = parts[:i]
+                    if lib_parts:
+                        return lib_parts[-1]   # deepest library folder
+                    break
+        # fallback: just use top-level folder
+        return parts[0]
     except Exception:
         return "Other"
 
@@ -98,10 +117,8 @@ async def list_series(
         series_q = series_q.where(MediaItem.series_name.ilike(f"%{search}%"))
         season_q = season_q.where(MediaItem.series_name.ilike(f"%{search}%"))
 
-    series_result, season_result = await asyncio.gather(
-        db.execute(series_q),
-        db.execute(season_q),
-    )
+    series_result = await db.execute(series_q)
+    season_result = await db.execute(season_q)
 
     seasons_by_series: dict[str, list[SeasonSummary]] = {}
     for s in season_result.all():
@@ -120,7 +137,7 @@ async def list_series(
         SeriesSummary(
             series_id=row.series_id,
             series_name=row.series_name,
-            library=_extract_library(row.sample_path or ""),
+            library=_extract_library(row.sample_path or "", row.series_name),
             total_episodes=row.total,
             hot_episodes=row.hot or 0,
             cold_episodes=row.cold or 0,

@@ -40,6 +40,14 @@ async def _queue_manual(jellyfin_id: str, direction: str, db: DBSession) -> Tran
     return transfer
 
 
+@router.post("/scoring/run")
+async def trigger_scoring_sweep() -> dict:
+    """Trigger a scoring sweep immediately in the background."""
+    from core.scheduler import scoring_sweep
+    asyncio.get_event_loop().create_task(scoring_sweep())
+    return {"status": "started"}
+
+
 @router.post("/sync/library")
 async def trigger_library_sync() -> dict:
     """Trigger a full library sync in the background. Returns immediately."""

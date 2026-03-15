@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getDashboard, getScoreHistory, triggerLibrarySync } from '../api/client'
+import { getDashboard, getScoreHistory, triggerLibrarySync, triggerScoringRun } from '../api/client'
 import StatCard from '../components/StatCard'
 import TransferRow from '../components/TransferRow'
 import {
@@ -34,6 +34,11 @@ export default function Overview() {
     onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 3000),
   })
 
+  const scoreMut = useMutation({
+    mutationFn: triggerScoringRun,
+    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 20_000),
+  })
+
   const chartData = history.map(h => ({
     date: fmtDate(h.recorded_at),
     hot: h.hot_items,
@@ -61,13 +66,23 @@ export default function Overview() {
           <h1 className="text-xl font-bold text-white">Overview</h1>
           <p className="text-sm text-gray-500 mt-0.5">Live storage snapshot</p>
         </div>
-        <button
-          className="btn-primary"
-          onClick={() => syncMut.mutate()}
-          disabled={syncMut.isPending}
-        >
-          {syncMut.isPending ? '⟳ Syncing…' : '⟳ Sync Library'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="btn-ghost"
+            onClick={() => scoreMut.mutate()}
+            disabled={scoreMut.isPending}
+            title="Runs the temperature scoring sweep immediately"
+          >
+            {scoreMut.isPending ? '⟳ Scoring…' : '🌡 Score Now'}
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => syncMut.mutate()}
+            disabled={syncMut.isPending}
+          >
+            {syncMut.isPending ? '⟳ Syncing…' : '⟳ Sync Library'}
+          </button>
+        </div>
       </div>
 
       {/* Stats grid */}

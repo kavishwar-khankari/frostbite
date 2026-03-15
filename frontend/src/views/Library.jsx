@@ -92,15 +92,10 @@ function ItemRow({ item, selected, onSelect }) {
   )
 }
 
-// ── Season accordion ────────────────────────────────────────────────────────
-function SeasonRow({ season, seriesId }) {
+// ── Season accordion — receives episodes as a prop, no fetching ─────────────
+function SeasonRow({ season, episodes }) {
   const [open, setOpen] = useState(false)
-  const { data: episodesPage } = useQuery({
-    queryKey: ['items', 'eps', seriesId, season.season_number],
-    queryFn: () => getItems({ series_id: seriesId, item_type: 'episode', limit: 500 }),
-    enabled: open,
-  })
-  const eps = (episodesPage?.items ?? []).filter(e => e.season_number === season.season_number)
+  const eps = episodes.filter(e => e.season_number === season.season_number)
 
   return (
     <div className="border-t border-gray-800/30">
@@ -124,7 +119,7 @@ function SeasonRow({ season, seriesId }) {
             <tbody>
               {eps.map(ep => <ItemRow key={ep.id} item={ep} selected={false} onSelect={() => {}} />)}
               {eps.length === 0 && (
-                <tr><td colSpan={7} className="px-8 py-3 text-xs text-gray-600">No episodes loaded</td></tr>
+                <tr><td colSpan={7} className="px-8 py-3 text-xs text-gray-600">No episodes</td></tr>
               )}
             </tbody>
           </table>
@@ -134,9 +129,19 @@ function SeasonRow({ season, seriesId }) {
   )
 }
 
-// ── Series card ─────────────────────────────────────────────────────────────
+// ── Series card — fetches all episodes once when opened ──────────────────────
 function SeriesCard({ series }) {
   const [open, setOpen] = useState(false)
+
+  // Single query for ALL episodes in this series — fetched once, shared across all seasons
+  const { data: episodesPage, isFetching } = useQuery({
+    queryKey: ['seriesEps', series.series_id],
+    queryFn: () => getItems({ series_id: series.series_id, item_type: 'episode', limit: 500, sort: 'episode_number', order: 'asc' }),
+    enabled: open,
+    staleTime: 60_000,
+  })
+  const episodes = episodesPage?.items ?? []
+
   return (
     <div className="card p-0 overflow-hidden">
       <button
@@ -156,12 +161,17 @@ function SeriesCard({ series }) {
           </div>
         </div>
         <div className="flex items-center gap-4 shrink-0">
+          {isFetching && <span className="text-xs text-gray-600 animate-pulse">Loading…</span>}
           <div className="w-24"><TemperatureBar value={series.avg_temperature} showLabel /></div>
           <span className="text-xs text-gray-500 w-16 text-right">{(series.total_size_bytes / 1e9).toFixed(1)} GB</span>
         </div>
       </button>
       {open && series.seasons.map(s => (
-        <SeasonRow key={s.season_number ?? 'specials'} season={s} seriesId={series.series_id} />
+        <SeasonRow
+          key={s.season_number ?? 'specials'}
+          season={s}
+          episodes={episodes}
+        />
       ))}
     </div>
   )
@@ -176,6 +186,8 @@ export default function Library() {
   const [sort, setSort] = useState('temperature')
   const [order, setOrder] = useState('desc')
   const [seriesSort, setSeriesSort] = useState('temperature')
+  const [seriesOrder, setSeriesOrder] = useState('desc')
+  const [seriesTier, setSeriesTier] = useState('')
   const [page, setPage] = useState(0)
   const [selected, setSelected] = useState(new Set())
   const [libraryTab, setLibraryTab] = useState('all')
@@ -208,9 +220,14 @@ export default function Library() {
     return ['all', ...libs]
   }, [allSeries])
 
-  const filteredSeries = libraryTab === 'all'
-    ? allSeries
-    : allSeries.filter(s => s.library === libraryTab)
+  const filteredSeries = useMemo(() => {
+    let list = libraryTab === 'all' ? allSeries : allSeries.filter(s => s.library === libraryTab)
+    if (seriesTier === 'hot')   list = list.filter(s => s.cold_episodes === 0)
+    if (seriesTier === 'cold')  list = list.filter(s => s.hot_episodes === 0)
+    if (seriesTier === 'mixed') list = list.filter(s => s.hot_episodes > 0 && s.cold_episodes > 0)
+    if (seriesOrder === 'asc')  list = [...list].reverse()
+    return list
+  }, [allSeries, libraryTab, seriesTier, seriesOrder])
 
   const toggleSelect = useCallback(id => {
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -274,12 +291,23 @@ export default function Library() {
           </>
         )}
         {mode === 'series' && (
-          <select className="select w-36" value={seriesSort} onChange={e => setSeriesSort(e.target.value)}>
-            <option value="temperature">Temperature</option>
-            <option value="name">Name</option>
-            <option value="size">Size</option>
-            <option value="date">Date Added</option>
-          </select>
+          <>
+            <select className="select w-36" value={seriesSort} onChange={e => setSeriesSort(e.target.value)}>
+              <option value="temperature">Temperature</option>
+              <option value="name">Name</option>
+              <option value="size">Size</option>
+              <option value="date">Date Added</option>
+            </select>
+            <button className="btn-ghost text-sm" onClick={() => setSeriesOrder(o => o === 'desc' ? 'asc' : 'desc')}>
+              {seriesOrder === 'desc' ? '↓' : '↑'}
+            </button>
+            <select className="select w-36" value={seriesTier} onChange={e => setSeriesTier(e.target.value)}>
+              <option value="">All tiers</option>
+              <option value="hot">All hot</option>
+              <option value="cold">All cold</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </>
         )}
       </div>
 
@@ -350,7 +378,7 @@ export default function Library() {
       {mode === 'series' && (
         <div className="space-y-3">
           {/* Library tabs — derived dynamically from data */}
-          {libraries.length > 2 && (
+          {libraries.length > 1 && (
             <div className="flex gap-1 flex-wrap">
               {libraries.map(lib => (
                 <button

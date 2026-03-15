@@ -16,6 +16,8 @@ _SORT_COLUMNS = {
     "file_size_bytes": MediaItem.file_size_bytes,
     "date_added": MediaItem.date_added,
     "last_scored_at": MediaItem.last_scored_at,
+    "episode_number": MediaItem.episode_number,
+    "season_number": MediaItem.season_number,
 }
 
 
