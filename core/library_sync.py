@@ -84,7 +84,11 @@ async def run_library_sync() -> dict:
     # ── 2. Fetch Tdarr eligibility ────────────────────────────────────────────
     logger.info("Library sync: fetching Tdarr eligibility...")
     tdarr_files = await tdarr.get_eligible_files()
-    eligible_paths: set[str] = {f["file"] for f in tdarr_files if f.get("file")}
+    eligible_paths: set[str] = {
+        f.get("_id") or f.get("file")
+        for f in tdarr_files
+        if f.get("_id") or f.get("file")
+    }
     logger.info("Library sync: %d Tdarr-eligible paths", len(eligible_paths))
 
     # ── 3. Walk filesystem and upsert ─────────────────────────────────────────

@@ -49,8 +49,13 @@ async def sync_tdarr_eligibility() -> None:
     if not eligible_files:
         return
 
-    # Build a set of absolute paths Tdarr says are done
-    done_paths: set[str] = {f["file"] for f in eligible_files if f.get("file")}
+    # Build a set of absolute paths Tdarr says are done.
+    # Tdarr uses file path as the document _id; "file" field may also be present.
+    done_paths: set[str] = {
+        f.get("_id") or f.get("file")
+        for f in eligible_files
+        if f.get("_id") or f.get("file")
+    }
 
     async with async_session_factory() as db:
         result = await db.execute(
