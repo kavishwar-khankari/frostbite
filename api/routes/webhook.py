@@ -15,7 +15,17 @@ _PROGRESS_INTERVAL_S = 30.0
 
 @router.post("/webhook/jellyfin", status_code=200)
 async def receive_jellyfin_webhook(request: Request) -> dict:
-    payload = await request.json()
+    body = await request.body()
+    if not body:
+        logger.debug("Jellyfin webhook: empty body (template not configured?)")
+        return {"ok": True}
+
+    try:
+        payload = await request.json()
+    except Exception:
+        logger.warning("Jellyfin webhook: invalid JSON body: %r", body[:200])
+        return {"ok": True}
+
     event_type = payload.get("NotificationType")
 
     logger.debug("Jellyfin webhook: %s", event_type)
