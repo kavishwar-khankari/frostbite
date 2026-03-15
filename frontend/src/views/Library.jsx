@@ -1,8 +1,76 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature } from '../api/client'
+import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature, getScoreBreakdown, freezeSeries, reheatSeries } from '../api/client'
 import TierBadge from '../components/TierBadge'
 import TemperatureBar from '../components/TemperatureBar'
+
+// ── Score breakdown tooltip ──────────────────────────────────────────────────
+const FACTOR_ORDER = [
+  { key: 'recency',          label: 'Recency',         max: 30 },
+  { key: 'play_count',       label: 'Play count',      max: 20 },
+  { key: 'unique_viewers',   label: 'Viewers',         max: 15 },
+  { key: 'trending',         label: 'Trending',        max: 15 },
+  { key: 'newness',          label: 'Newness',         max: 30 },
+  { key: 'series_status',    label: 'Series ongoing',  max:  5 },
+  { key: 'community_rating', label: 'Rating',          max:  5 },
+  { key: 'size_penalty',     label: 'Size penalty',    max:  0 },
+]
+
+function ScoreBreakdownTooltip({ jellyfin_id, temperature }) {
+  const [visible, setVisible] = useState(false)
+  const timerRef = useRef(null)
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['score-breakdown', jellyfin_id],
+    queryFn: () => getScoreBreakdown(jellyfin_id),
+    enabled: visible,
+    staleTime: 60_000,
+  })
+
+  const show = () => { timerRef.current = setTimeout(() => setVisible(true), 200) }
+  const hide = () => { clearTimeout(timerRef.current); setVisible(false) }
+
+  return (
+    <div className="relative inline-block w-full" onMouseEnter={show} onMouseLeave={hide}>
+      <TemperatureBar value={temperature} />
+      {visible && (
+        <div className="absolute z-50 left-0 top-full mt-1 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 text-xs">
+          <div className="text-gray-400 font-medium mb-2">Score breakdown</div>
+          {isFetching || !data ? (
+            <div className="text-gray-600">Loading…</div>
+          ) : (
+            <div className="space-y-1">
+              {FACTOR_ORDER.map(({ key, label, max }) => {
+                const val = data.breakdown?.[key] ?? 0
+                if (val === 0 && max === 0) return null
+                const pct = max > 0 ? Math.abs(val) / max * 100 : 0
+                const isNeg = val < 0
+                return (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-gray-500 w-24 shrink-0">{label}</span>
+                    <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${isNeg ? 'bg-red-500' : 'bg-frost-500'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className={`w-8 text-right tabular-nums ${isNeg ? 'text-red-400' : 'text-gray-300'}`}>
+                      {val > 0 ? '+' : ''}{val}
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="border-t border-gray-700 pt-1 mt-1 flex justify-between">
+                <span className="text-gray-500">Total</span>
+                <span className="text-white font-medium">{data.temperature}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function fmtSize(b) {
   if (!b) return '—'
@@ -81,8 +149,8 @@ function ItemRow({ item, selected, onSelect }) {
             <button type="button" onClick={() => setEditTemp(false)} className="text-xs text-gray-500">✕</button>
           </form>
         ) : (
-          <button className="w-full text-left hover:opacity-80" onClick={() => { setTempVal(item.temperature.toFixed(1)); setEditTemp(true) }} title="Click to override">
-            <TemperatureBar value={item.temperature} />
+          <button className="w-full text-left hover:opacity-80" onClick={() => { setTempVal(item.temperature.toFixed(1)); setEditTemp(true) }}>
+            <ScoreBreakdownTooltip jellyfin_id={item.jellyfin_id} temperature={item.temperature} />
           </button>
         )}
       </td>
@@ -108,28 +176,64 @@ function ItemRow({ item, selected, onSelect }) {
 }
 
 // ── Season accordion — receives episodes as a prop, no fetching ─────────────
-function SeasonRow({ season, episodes }) {
+function SeasonRow({ season, seriesId, episodes }) {
   const [open, setOpen] = useState(false)
+  const qc = useQueryClient()
   const eps = episodes.filter(e => e.season_number === season.season_number)
 
+  const freezeSeason = useMutation({
+    mutationFn: () => freezeSeries(seriesId, season.season_number),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['seriesEps'] }),
+  })
+  const reheatSeason = useMutation({
+    mutationFn: () => reheatSeries(seriesId, season.season_number),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['seriesEps'] }),
+  })
+
   return (
-    <div className="border-t border-gray-800/30">
-      <button
-        className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-800/30 text-left"
-        onClick={() => setOpen(v => !v)}
-      >
-        <span className="text-gray-500 text-xs w-3">{open ? '▾' : '▸'}</span>
-        <span className="text-sm text-gray-300">
-          {season.season_number != null ? `Season ${season.season_number}` : 'Specials'}
-        </span>
-        <span className="text-xs text-gray-500 ml-1">{season.episode_count} eps</span>
-        {season.hot_count > 0 && <span className="text-xs text-orange-400">🔥 {season.hot_count}</span>}
-        {season.cold_count > 0 && <span className="text-xs text-frost-400">❄️ {season.cold_count}</span>}
-        <div className="ml-auto flex items-center gap-4">
-          <div className="w-20"><TemperatureBar value={season.avg_temperature} showLabel /></div>
-          <span className="text-xs text-gray-500 w-16 text-right">{(season.total_size_bytes / 1e9).toFixed(1)} GB</span>
+    <div className="border-t border-gray-800/30 group/season">
+      <div className="flex items-center hover:bg-gray-800/30">
+        {/* Expand toggle */}
+        <button
+          className="flex-1 flex items-center gap-2 px-4 py-2 text-left"
+          onClick={() => setOpen(v => !v)}
+        >
+          <span className="text-gray-500 text-xs w-3">{open ? '▾' : '▸'}</span>
+          <span className="text-sm text-gray-300">
+            {season.season_number != null ? `Season ${season.season_number}` : 'Specials'}
+          </span>
+          <span className="text-xs text-gray-500 ml-1">{season.episode_count} eps</span>
+          {season.hot_count > 0 && <span className="text-xs text-orange-400">🔥 {season.hot_count}</span>}
+          {season.cold_count > 0 && <span className="text-xs text-frost-400">❄️ {season.cold_count}</span>}
+          <div className="ml-auto flex items-center gap-4">
+            <div className="w-20"><TemperatureBar value={season.avg_temperature} showLabel /></div>
+            <span className="text-xs text-gray-500 w-16 text-right">{(season.total_size_bytes / 1e9).toFixed(1)} GB</span>
+          </div>
+        </button>
+        {/* Season-level actions */}
+        <div className="flex gap-1 pr-3 opacity-0 group-hover/season:opacity-100 transition-opacity shrink-0">
+          {season.hot_count > 0 && (
+            <button
+              className="btn bg-frost-900/40 hover:bg-frost-800/60 text-frost-300 text-xs py-0.5 px-2"
+              onClick={() => freezeSeason.mutate()}
+              disabled={freezeSeason.isPending}
+              title={`Freeze all ${season.hot_count} hot episodes in this season`}
+            >
+              {freezeSeason.isPending ? '…' : `❄ Season (${season.hot_count})`}
+            </button>
+          )}
+          {season.cold_count > 0 && (
+            <button
+              className="btn bg-orange-900/40 hover:bg-orange-800/60 text-orange-300 text-xs py-0.5 px-2"
+              onClick={() => reheatSeason.mutate()}
+              disabled={reheatSeason.isPending}
+              title={`Reheat all ${season.cold_count} cold episodes in this season`}
+            >
+              {reheatSeason.isPending ? '…' : `🔥 Season (${season.cold_count})`}
+            </button>
+          )}
         </div>
-      </button>
+      </div>
       {open && (
         <div className="bg-gray-950/30">
           <table className="w-full text-sm">
@@ -149,8 +253,8 @@ function SeasonRow({ season, episodes }) {
 // ── Series card — fetches all episodes once when opened ──────────────────────
 function SeriesCard({ series }) {
   const [open, setOpen] = useState(false)
+  const qc = useQueryClient()
 
-  // Single query for ALL episodes in this series — fetched once, shared across all seasons
   const { data: episodesPage, isFetching } = useQuery({
     queryKey: ['seriesEps', series.series_id],
     queryFn: () => getItems({ series_id: series.series_id, item_type: 'episode', limit: 500, sort: 'episode_number', order: 'asc' }),
@@ -159,34 +263,70 @@ function SeriesCard({ series }) {
   })
   const episodes = episodesPage?.items ?? []
 
+  const freezeAll = useMutation({
+    mutationFn: () => freezeSeries(series.series_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['series'] }),
+  })
+  const reheatAll = useMutation({
+    mutationFn: () => reheatSeries(series.series_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['series'] }),
+  })
+
   return (
-    <div className="card p-0 overflow-hidden">
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800/20 text-left"
-        onClick={() => setOpen(v => !v)}
-      >
-        <span className="text-gray-500 w-3">{open ? '▾' : '▸'}</span>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-white truncate">{series.series_name ?? series.series_id}</div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-xs text-gray-500">{series.total_episodes} episodes</span>
-            <span className="text-xs text-orange-400">🔥 {series.hot_episodes}</span>
-            <span className="text-xs text-frost-400">❄️ {series.cold_episodes}</span>
-            {series.last_added && (
-              <span className="text-xs text-gray-600">Added {series.last_added}</span>
-            )}
+    <div className="card p-0 overflow-hidden group/series">
+      <div className="flex items-center hover:bg-gray-800/20">
+        {/* Expand toggle */}
+        <div
+          className="flex-1 flex items-center gap-3 px-4 py-3 cursor-pointer min-w-0"
+          onClick={() => setOpen(v => !v)}
+        >
+          <span className="text-gray-500 w-3 shrink-0">{open ? '▾' : '▸'}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-white truncate">{series.series_name ?? series.series_id}</div>
+            <div className="flex items-center gap-3 mt-0.5">
+              <span className="text-xs text-gray-500">{series.total_episodes} episodes</span>
+              <span className="text-xs text-orange-400">🔥 {series.hot_episodes}</span>
+              <span className="text-xs text-frost-400">❄️ {series.cold_episodes}</span>
+              {series.last_added && (
+                <span className="text-xs text-gray-600">Added {series.last_added}</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            {isFetching && <span className="text-xs text-gray-600 animate-pulse">Loading…</span>}
+            <div className="w-24"><TemperatureBar value={series.avg_temperature} showLabel /></div>
+            <span className="text-xs text-gray-500 w-20 text-right">{(series.total_size_bytes / 1e9).toFixed(1)} GB</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 shrink-0">
-          {isFetching && <span className="text-xs text-gray-600 animate-pulse">Loading…</span>}
-          <div className="w-24"><TemperatureBar value={series.avg_temperature} showLabel /></div>
-          <span className="text-xs text-gray-500 w-16 text-right">{(series.total_size_bytes / 1e9).toFixed(1)} GB</span>
+        {/* Series-level actions */}
+        <div className="flex gap-1 pr-4 opacity-0 group-hover/series:opacity-100 transition-opacity shrink-0">
+          {series.hot_episodes > 0 && (
+            <button
+              className="btn bg-frost-900/40 hover:bg-frost-800/60 text-frost-300 text-xs py-1 px-2.5"
+              onClick={() => freezeAll.mutate()}
+              disabled={freezeAll.isPending}
+              title={`Freeze all ${series.hot_episodes} hot episodes`}
+            >
+              {freezeAll.isPending ? '…' : `❄ Freeze all (${series.hot_episodes})`}
+            </button>
+          )}
+          {series.cold_episodes > 0 && (
+            <button
+              className="btn bg-orange-900/40 hover:bg-orange-800/60 text-orange-300 text-xs py-1 px-2.5"
+              onClick={() => reheatAll.mutate()}
+              disabled={reheatAll.isPending}
+              title={`Reheat all ${series.cold_episodes} cold episodes`}
+            >
+              {reheatAll.isPending ? '…' : `🔥 Reheat all (${series.cold_episodes})`}
+            </button>
+          )}
         </div>
-      </button>
+      </div>
       {open && series.seasons.map(s => (
         <SeasonRow
           key={s.season_number ?? 'specials'}
           season={s}
+          seriesId={series.series_id}
           episodes={episodes}
         />
       ))}

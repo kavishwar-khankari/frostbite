@@ -25,8 +25,11 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# These statuses mean Tdarr is done with the file — safe for Frostbite to take over
-_ELIGIBLE_STATUSES = {"Not required", "Stream copy"}
+# These statuses mean Tdarr is done with the file — safe for Frostbite to take over.
+# "Transcode success" = file was transcoded and succeeded.
+# "Not required"     = file already meets the target codec, no transcode needed.
+# "Stream copy"      = copied without re-encoding (lightweight transcode).
+_ELIGIBLE_STATUSES = {"Transcode success", "Not required", "Stream copy"}
 
 
 class TdarrClient:
@@ -90,8 +93,18 @@ class TdarrClient:
                     docs = data.get("docs") or data.get("array") or list(data.values())
                 else:
                     docs = []
-                return [d for d in docs if isinstance(d, dict)
-                        and d.get("TranscodeDecisionMaker") in _ELIGIBLE_STATUSES]
+                # Log the distinct status values we see for debugging
+                from collections import Counter
+                status_counts = Counter(
+                    d.get("TranscodeDecisionMaker", "<missing>")
+                    for d in docs if isinstance(d, dict)
+                )
+                logger.info("Tdarr TranscodeDecisionMaker distribution: %s", dict(status_counts))
+
+                eligible = [d for d in docs if isinstance(d, dict)
+                            and d.get("TranscodeDecisionMaker") in _ELIGIBLE_STATUSES]
+                logger.info("Tdarr eligible files: %d / %d total", len(eligible), len(docs))
+                return eligible
         except httpx.HTTPError as exc:
             logger.warning("Tdarr bulk fetch failed: %s", exc)
             return []

@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from api.deps import DBSession
 from models.schemas import MediaItemResponse
@@ -61,6 +61,57 @@ async def list_items(
     q = base.order_by(direction).limit(limit).offset(offset)
     result = await db.execute(q)
     return ItemsPage(total=total, items=list(result.scalars().all()))
+
+
+@router.get("/items/{jellyfin_id}/score-breakdown")
+async def get_score_breakdown(jellyfin_id: str, db: DBSession) -> dict:
+    """Return the per-factor temperature breakdown for a single item."""
+    from core.scorer import ItemMeta, PlaybackStats, calculate_temperature_with_breakdown
+
+    result = await db.execute(select(MediaItem).where(MediaItem.jellyfin_id == jellyfin_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    stats_row = None
+    try:
+        sr = await db.execute(
+            text("SELECT * FROM item_playback_stats WHERE media_item_id = :id"),
+            {"id": item.id},
+        )
+        stats_row = sr.mappings().one_or_none()
+    except Exception:
+        pass
+
+    stats = PlaybackStats(
+        last_played_at=stats_row["last_played_at"] if stats_row else None,
+        total_plays=stats_row["total_plays"] if stats_row else 0,
+        unique_viewers=stats_row["unique_viewers"] if stats_row else 0,
+        plays_last_7d=stats_row["plays_last_7d"] if stats_row else 0,
+        plays_last_30d=stats_row["plays_last_30d"] if stats_row else 0,
+    )
+    meta = ItemMeta(
+        file_size_bytes=item.file_size_bytes,
+        date_added=item.date_added,
+        series_status=item.series_status,
+        community_rating=item.community_rating,
+    )
+    score, breakdown = calculate_temperature_with_breakdown(meta, stats)
+    return {
+        "jellyfin_id": jellyfin_id,
+        "temperature": round(score, 1),
+        "breakdown": breakdown,
+        "factors": {
+            "recency":          {"label": "Recency (last played)",  "max": 30, "value": breakdown["recency"]},
+            "play_count":       {"label": "Play count",             "max": 20, "value": breakdown["play_count"]},
+            "unique_viewers":   {"label": "Unique viewers",         "max": 15, "value": breakdown["unique_viewers"]},
+            "trending":         {"label": "Trending (7d velocity)", "max": 15, "value": breakdown["trending"]},
+            "newness":          {"label": "Newness boost",          "max": 30, "value": breakdown["newness"]},
+            "series_status":    {"label": "Series continuing",      "max":  5, "value": breakdown["series_status"]},
+            "community_rating": {"label": "Community rating",       "max":  5, "value": breakdown["community_rating"]},
+            "size_penalty":     {"label": "Size penalty",           "max":  0, "value": breakdown["size_penalty"]},
+        },
+    }
 
 
 @router.patch("/items/{jellyfin_id}/temperature", response_model=MediaItemResponse)

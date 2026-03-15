@@ -33,7 +33,7 @@ const STATUS_COLOR = {
 export default function TransferRow({ transfer }) {
   const qc = useQueryClient()
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['transfers'] })
+    qc.invalidateQueries({ queryKey: ['transfers'], exact: false })
     qc.invalidateQueries({ queryKey: ['dashboard'] })
   }
 

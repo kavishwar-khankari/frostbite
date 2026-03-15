@@ -196,7 +196,15 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
     item = item_result.scalar_one()
 
-    rel_path = transfer.source_path  # relative to jellyfin_media_root / NAS root / cloud root
+    rel_path = transfer.source_path
+
+    # Normalise: old transfers stored the full Jellyfin path (/media_2/...).
+    # Strip the jellyfin_media_root prefix so we always work with a relative path.
+    if os.path.isabs(rel_path):
+        rel_path = os.path.relpath(rel_path, settings.jellyfin_media_root)
+        # Persist the corrected path so this item never needs fixing again
+        transfer.source_path = rel_path
+        transfer.dest_path = rel_path
 
     # ── Pre-flight guard 1: media extension ──────────────────────────────────
     ext = os.path.splitext(rel_path)[1].lower()

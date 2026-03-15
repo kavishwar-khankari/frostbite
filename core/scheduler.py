@@ -97,10 +97,14 @@ async def scoring_sweep() -> None:
     from core.scorer import ItemMeta, PlaybackStats, calculate_temperature
 
     async with async_session_factory() as db:
-        # Score ALL items — tdarr_eligible is informational only, not a scoring gate
-        result = await db.execute(select(MediaItem))
+        # Only score tdarr-eligible items — Tdarr must confirm a file is in its
+        # final encoded form before Frostbite decides its temperature and whether
+        # to freeze it. Non-eligible items keep temperature=100 (always hot).
+        result = await db.execute(
+            select(MediaItem).where(MediaItem.tdarr_eligible == True)  # noqa: E712
+        )
         items = list(result.scalars())
-        logger.info("Scoring sweep: %d items to score", len(items))
+        logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))
 
         # Fetch item IDs that already have a pending transfer so we don't
         # append duplicates on every sweep. This is the primary guard against

@@ -39,8 +39,18 @@ export const getSeries = (search, sort = 'temperature') => {
 }
 
 // ── Transfers ────────────────────────────────────────────────────────────
-export const getTransfers = (status) =>
-  req(`/transfers${status ? `?status=${status}` : ''}`)
+export const getTransfers = (params = {}) => {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return req(`/transfers${qs ? `?${qs}` : ''}`)
+}
+
+export const bulkCancelTransfers = (ids) =>
+  req('/transfers/bulk-cancel', { method: 'POST', body: JSON.stringify({ ids }) })
+
+export const bulkBumpTransfers = (ids) =>
+  req('/transfers/bulk-bump', { method: 'POST', body: JSON.stringify({ ids }) })
 
 export const cancelTransfer = (id) =>
   req(`/transfers/${id}/cancel`, { method: 'POST' })
@@ -70,11 +80,23 @@ export const bulkFreeze = (jellyfin_ids) =>
 export const bulkReheat = (jellyfin_ids) =>
   req('/bulk-reheat', { method: 'POST', body: JSON.stringify({ jellyfin_ids }) })
 
+export const getScoreBreakdown = (jellyfin_id) =>
+  req(`/items/${jellyfin_id}/score-breakdown`)
+
+export const freezeSeries = (series_id, season_number = null) =>
+  req('/freeze-series', { method: 'POST', body: JSON.stringify({ series_id, season_number }) })
+
+export const reheatSeries = (series_id, season_number = null) =>
+  req('/reheat-series', { method: 'POST', body: JSON.stringify({ series_id, season_number }) })
+
 export const triggerLibrarySync = () =>
   req('/sync/library', { method: 'POST' })
 
 export const triggerScoringRun = () =>
   req('/scoring/run', { method: 'POST' })
+
+export const triggerTdarrSync = () =>
+  req('/tdarr/sync', { method: 'POST' })
 
 // ── Score history ────────────────────────────────────────────────────────
 export const getScoreHistory = (days = 30) =>
