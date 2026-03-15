@@ -108,6 +108,8 @@ function SeasonRow({ season, episodes }) {
           {season.season_number != null ? `Season ${season.season_number}` : 'Specials'}
         </span>
         <span className="text-xs text-gray-500 ml-1">{season.episode_count} eps</span>
+        {season.hot_count > 0 && <span className="text-xs text-orange-400">🔥 {season.hot_count}</span>}
+        {season.cold_count > 0 && <span className="text-xs text-frost-400">❄️ {season.cold_count}</span>}
         <div className="ml-auto flex items-center gap-4">
           <div className="w-20"><TemperatureBar value={season.avg_temperature} showLabel /></div>
           <span className="text-xs text-gray-500 w-16 text-right">{(season.total_size_bytes / 1e9).toFixed(1)} GB</span>
@@ -292,6 +294,12 @@ export default function Library() {
         )}
         {mode === 'series' && (
           <>
+            <select className="select w-36" value={seriesTier} onChange={e => setSeriesTier(e.target.value)}>
+              <option value="">All tiers</option>
+              <option value="hot">All hot</option>
+              <option value="cold">All cold</option>
+              <option value="mixed">Mixed</option>
+            </select>
             <select className="select w-36" value={seriesSort} onChange={e => setSeriesSort(e.target.value)}>
               <option value="temperature">Temperature</option>
               <option value="name">Name</option>
@@ -301,12 +309,6 @@ export default function Library() {
             <button className="btn-ghost text-sm" onClick={() => setSeriesOrder(o => o === 'desc' ? 'asc' : 'desc')}>
               {seriesOrder === 'desc' ? '↓' : '↑'}
             </button>
-            <select className="select w-36" value={seriesTier} onChange={e => setSeriesTier(e.target.value)}>
-              <option value="">All tiers</option>
-              <option value="hot">All hot</option>
-              <option value="cold">All cold</option>
-              <option value="mixed">Mixed</option>
-            </select>
           </>
         )}
       </div>

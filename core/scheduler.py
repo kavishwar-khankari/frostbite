@@ -208,18 +208,31 @@ async def record_score_snapshot() -> None:
         nas_used = 0
         try:
             sv = os.statvfs(settings.nas_root)
-            total = sv.f_blocks * sv.f_frsize
-            free = sv.f_bavail * sv.f_frsize
-            nas_used = total - free
+            total_bytes = sv.f_blocks * sv.f_frsize
+            free_bytes = sv.f_bavail * sv.f_frsize
+            nas_used = total_bytes - free_bytes
         except OSError:
             pass
+
+        cloud_used = 0
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{settings.rclone_rc_url}/operations/about",
+                    json={"fs": f"{settings.rclone_remote}:"},
+                )
+                if resp.status_code == 200:
+                    cloud_used = resp.json().get("used", 0) or 0
+        except Exception as exc:
+            logger.debug("Could not fetch cloud usage from rclone: %s", exc)
 
         db.add(ScoreHistory(
             total_items=row.total or 0,
             hot_items=row.hot or 0,
             cold_items=row.cold or 0,
             nas_used_bytes=nas_used,
-            cloud_used_bytes=0,  # rclone about would give this — future enhancement
+            cloud_used_bytes=cloud_used,
             avg_temperature=float(row.avg_temp or 0),
         ))
         await db.commit()
