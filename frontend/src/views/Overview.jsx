@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getDashboard, getScoreHistory, triggerLibrarySync, triggerScoringRun } from '../api/client'
+import { getDashboard, getScoreHistory, getSettings, triggerLibrarySync, triggerScoringRun } from '../api/client'
 import StatCard from '../components/StatCard'
 import TransferRow from '../components/TransferRow'
 import {
@@ -30,8 +30,16 @@ export default function Overview() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
-    refetchInterval: 15_000,
+    // Poll faster when transfers are active so progress bars update smoothly
+    refetchInterval: (query) =>
+      (query.state.data?.active_transfers?.length ?? 0) > 0 ? 3_000 : 15_000,
   })
+  const { data: appSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettings,
+    refetchInterval: 60_000,
+  })
+
   const { data: history = [] } = useQuery({
     queryKey: ['scoreHistory', 30],
     queryFn: () => getScoreHistory(30),
@@ -175,6 +183,20 @@ export default function Overview() {
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-medium text-gray-300">Active Transfers</div>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            {appSettings && (
+              <>
+                <span>
+                  Freeze: {stats?.active_transfers?.filter(t => t.direction === 'freeze').length ?? 0}
+                  /{appSettings.max_concurrent_freezes}
+                </span>
+                <span>
+                  Reheat: {stats?.active_transfers?.filter(t => t.direction === 'reheat').length ?? 0}
+                  /{appSettings.max_concurrent_reheats}
+                </span>
+              </>
+            )}
+          </div>
         </div>
         {stats?.active_transfers?.length > 0 ? (
           stats.active_transfers.map(t => <TransferRow key={t.id} transfer={t} />)

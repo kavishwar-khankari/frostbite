@@ -21,12 +21,17 @@ from models.tables import MediaItem, Transfer
 
 logger = logging.getLogger(__name__)
 
-_MAX_ACTIVE_REHEATS = settings.max_concurrent_reheats
-_MAX_ACTIVE_FREEZES = settings.max_concurrent_freezes
-
 # Background task handle
 _worker_task: asyncio.Task | None = None
 _paused: bool = False
+
+# Only these extensions are allowed to be transferred.
+# Protects against accidentally syncing backup files, configs, etc.
+_MEDIA_EXTENSIONS = frozenset({
+    ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".ts", ".m2ts",
+    ".flac", ".mp3", ".aac", ".m4a", ".opus",
+    ".srt", ".ass", ".sub", ".idx",
+})
 
 
 def is_paused() -> bool:
@@ -155,11 +160,12 @@ async def _process_queue() -> None:
         for t in active:
             await _poll_transfer(db, t)
 
-        # Pick next queued transfer (skip if globally paused)
+        # Pick next queued transfer (skip if globally paused).
+        # Read limits from settings so UI changes take effect immediately.
         if not _paused:
-            if active_reheats < _MAX_ACTIVE_REHEATS:
+            if active_reheats < settings.max_concurrent_reheats:
                 await _start_next(db, "reheat")
-            if active_freezes < _MAX_ACTIVE_FREEZES:
+            if active_freezes < settings.max_concurrent_freezes:
                 if _freeze_window_active():
                     await _start_next(db, "freeze")
 
@@ -190,25 +196,40 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
     item = item_result.scalar_one()
 
-    # transfer.source_path / dest_path are relative to jellyfin_media_root,
-    # matching the subdirectory layout on both NAS and cloud remote.
+    rel_path = transfer.source_path  # relative to jellyfin_media_root / NAS root / cloud root
+
+    # ── Pre-flight guard 1: media extension ──────────────────────────────────
+    ext = os.path.splitext(rel_path)[1].lower()
+    if ext not in _MEDIA_EXTENSIONS:
+        transfer.status = "failed"
+        transfer.error_message = f"Blocked: '{ext}' is not a permitted media extension"
+        logger.error("Blocked transfer %s: not a media file (%s)", transfer.id, rel_path)
+        return
+
+    # ── Pre-flight guard 2: source file must exist ────────────────────────────
     if transfer.direction == "freeze":
         src_fs = f"{settings.nas_root}/"
         dst_fs = f"{settings.rclone_remote}:media/"
+        nas_path = os.path.join(settings.nas_root, rel_path)
+        if not os.path.isfile(nas_path):
+            transfer.status = "failed"
+            transfer.error_message = f"Source file not found on NAS: {nas_path}"
+            logger.error("Transfer %s: file missing on NAS: %s", transfer.id, nas_path)
+            return
     else:
         src_fs = f"{settings.rclone_remote}:media/"
         dst_fs = f"{settings.nas_root}/"
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            # operations/copyfile copies a single file (srcRemote/dstRemote are
-            # paths *within* their respective fs roots). sync/copy would sync
-            # the entire fs and does not accept srcRemote/dstRemote.
+            # operations/copyfile transfers exactly one file.
+            # srcRemote / dstRemote are paths *within* their respective fs roots.
+            # Never use sync/copy here — it syncs the entire srcFs if srcRemote is wrong.
             resp = await client.post(f"{settings.rclone_rc_url}/operations/copyfile", json={
                 "srcFs": src_fs,
-                "srcRemote": transfer.source_path,
+                "srcRemote": rel_path,
                 "dstFs": dst_fs,
-                "dstRemote": transfer.dest_path,
+                "dstRemote": rel_path,
                 "_async": True,
                 "_group": f"frostbite-{transfer.id}",
             })

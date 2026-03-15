@@ -97,12 +97,22 @@ async def scoring_sweep() -> None:
     from core.scorer import ItemMeta, PlaybackStats, calculate_temperature
 
     async with async_session_factory() as db:
-        result = await db.execute(
-            select(MediaItem).where(MediaItem.tdarr_eligible == True)  # noqa: E712
-        )
+        # Score ALL items — tdarr_eligible is informational only, not a scoring gate
+        result = await db.execute(select(MediaItem))
         items = list(result.scalars())
-        logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))
+        logger.info("Scoring sweep: %d items to score", len(items))
 
+        # Fetch item IDs that already have a pending transfer so we don't
+        # append duplicates on every sweep. This is the primary guard against
+        # the 11k+ queued transfers accumulation bug.
+        pending_result = await db.execute(
+            select(Transfer.media_item_id).where(
+                Transfer.status.in_(["queued", "active"])
+            )
+        )
+        pending_ids: set = set(pending_result.scalars())
+
+        queued_freeze = queued_reheat = 0
         for item in items:
             # Fetch stats from the materialized view if available, otherwise use zeros
             stats_row = None
@@ -132,14 +142,24 @@ async def scoring_sweep() -> None:
             item.temperature = new_temp
             item.last_scored_at = datetime.utcnow()
 
-            # Queue transfers based on thresholds
+            # Queue transfers — skip if item already has a pending transfer
+            if item.id in pending_ids:
+                continue
+
             if item.storage_tier == "hot" and new_temp < settings.freeze_threshold:
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
+                pending_ids.add(item.id)
+                queued_freeze += 1
             elif item.storage_tier == "cold" and new_temp > settings.reheat_threshold:
                 await queue_transfer(db, item.id, "reheat", "auto_score", priority=int(new_temp - settings.reheat_threshold))
+                pending_ids.add(item.id)
+                queued_reheat += 1
 
         await db.commit()
-        logger.info("Scoring sweep complete: %d items rescored", len(items))
+        logger.info(
+            "Scoring sweep complete: %d rescored, +%d freeze / +%d reheat queued",
+            len(items), queued_freeze, queued_reheat,
+        )
 
 
 async def check_nas_space() -> None:
@@ -150,10 +170,7 @@ async def check_nas_space() -> None:
         async with async_session_factory() as db:
             result = await db.execute(
                 select(MediaItem)
-                .where(
-                    MediaItem.storage_tier == "hot",
-                    MediaItem.tdarr_eligible == True,  # noqa: E712
-                )
+                .where(MediaItem.storage_tier == "hot")
                 .order_by(MediaItem.temperature.asc())
                 .limit(10)
             )
@@ -217,15 +234,21 @@ async def record_score_snapshot() -> None:
         cloud_used = 0
         try:
             import httpx
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
                     f"{settings.rclone_rc_url}/operations/about",
                     json={"fs": f"{settings.rclone_remote}:"},
                 )
                 if resp.status_code == 200:
-                    cloud_used = resp.json().get("used", 0) or 0
+                    data = resp.json()
+                    cloud_used = data.get("used", 0) or 0
+                    logger.info("Cloud usage: %.1f GB (raw: %s)", cloud_used / 1e9, data)
+                else:
+                    logger.warning(
+                        "operations/about returned %d: %s", resp.status_code, resp.text[:200]
+                    )
         except Exception as exc:
-            logger.debug("Could not fetch cloud usage from rclone: %s", exc)
+            logger.warning("Could not fetch cloud usage from rclone: %s", exc)
 
         db.add(ScoreHistory(
             total_items=row.total or 0,

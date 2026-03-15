@@ -30,13 +30,13 @@ const SETTING_META = {
   },
   max_concurrent_reheats: {
     label: 'Max Concurrent Reheats',
-    desc: 'Maximum number of simultaneous reheat (cloud→NAS) transfers.',
-    min: 1, max: 20, step: 1, unit: '',
+    desc: 'Simultaneous reheat (cloud→NAS) transfers. OpenDrive download is unthrottled (~5–11 MB/s per file).',
+    min: 1, max: 8, step: 1, unit: '',
   },
   max_concurrent_freezes: {
     label: 'Max Concurrent Freezes',
-    desc: 'Maximum number of simultaneous freeze (NAS→cloud) transfers.',
-    min: 1, max: 20, step: 1, unit: '',
+    desc: 'Simultaneous freeze (NAS→cloud) transfers. OpenDrive upload is throttled (~300 KB/s–1.5 MB/s per file).',
+    min: 1, max: 8, step: 1, unit: '',
   },
   emergency_freeze_threshold_gb: {
     label: 'Emergency Freeze Threshold',

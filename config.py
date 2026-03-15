@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # Transfer settings
     max_concurrent_reheats: int = 2
-    max_concurrent_freezes: int = 1
+    max_concurrent_freezes: int = 2
     freeze_window_start: int = 0   # Hour (IST)
     freeze_window_end: int = 8     # Hour (IST)
 
