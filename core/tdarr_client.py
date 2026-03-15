@@ -44,7 +44,7 @@ class TdarrClient:
                             "collection": "MediaItems",
                             "mode": "find",
                             "docFilter": {"file": file_path},
-                            "findLimit": 1,
+                            "limit": 1,
                         }
                     },
                 )
@@ -60,28 +60,30 @@ class TdarrClient:
         """
         Fetch all files Tdarr considers done (transcode not required or stream copied).
         Used by the scheduler to bulk-update tdarr_eligible flags.
+
+        Fetches all MediaItems without a server-side filter and filters client-side
+        to avoid NeDB query operator compatibility issues.
         """
         try:
-            async with httpx.AsyncClient(timeout=30, headers=self._headers) as client:
+            async with httpx.AsyncClient(timeout=60, headers=self._headers) as client:
                 resp = await client.post(
                     f"{self._base}/api/v2/cruddb",
                     json={
                         "data": {
                             "collection": "MediaItems",
                             "mode": "find",
-                            "docFilter": {
-                                "TranscodeDecisionMaker": {"$in": list(_ELIGIBLE_STATUSES)}
-                            },
-                            "limit": 10000,
+                            "docFilter": {},
+                            "limit": 100000,
                         }
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                # Tdarr returns either {array} directly or {docs: array} depending on version
                 if isinstance(data, list):
-                    return data
-                return data.get("docs") or data.get("array") or []
+                    docs = data
+                else:
+                    docs = data.get("docs") or data.get("array") or []
+                return [d for d in docs if d.get("TranscodeDecisionMaker") in _ELIGIBLE_STATUSES]
         except httpx.HTTPError as exc:
             logger.warning("Tdarr bulk fetch failed: %s", exc)
             return []
