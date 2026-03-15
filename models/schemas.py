@@ -165,7 +165,8 @@ class PlaybackEventIn(BaseModel):
                 (payload.get("ItemType") or item.get("Type") or "").lower() or None
             ),
             title=(
-                payload.get("ItemName")
+                payload.get("Name")
+                or payload.get("ItemName")
                 or item.get("Name")
             ),
             series_id=(
