@@ -293,14 +293,37 @@ async def _poll_transfer(db: AsyncSession, transfer: Transfer) -> None:
     transfer.speed_bps = int(stats.get("speed", 0))
     transfer.eta_seconds = stats.get("eta")
 
-    # Check if the rclone job finished
+    # Check if the rclone job finished — try local RC first, then all nodes.
+    job_status = None
+    rc_url_used = None
+    payload = {"jobid": transfer.rclone_job_id}
+
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.post(f"{settings.rclone_rc_url}/job/status", json={
-                "jobid": transfer.rclone_job_id
-            })
-            job_status = resp.json()
+            resp = await client.post(f"{settings.rclone_rc_url}/job/status", json=payload)
+            if resp.status_code == 200:
+                job_status = resp.json()
+                rc_url_used = settings.rclone_rc_url
     except Exception:
+        pass
+
+    # Local RC doesn't know this job — fan out to all nodes.
+    if job_status is None:
+        rc_urls = [u.strip() for u in settings.rclone_rc_urls.split(",") if u.strip()]
+        async with httpx.AsyncClient(timeout=5) as client:
+            for url in rc_urls:
+                try:
+                    resp = await client.post(f"{url}/job/status", json=payload)
+                    if resp.status_code == 200:
+                        job_status = resp.json()
+                        rc_url_used = url
+                        break
+                except Exception:
+                    continue
+
+    # Job not found on ANY node — resolve the orphan.
+    if job_status is None:
+        await _resolve_orphaned_transfer(db, transfer)
         return
 
     if job_status.get("finished"):
@@ -321,6 +344,58 @@ async def _poll_transfer(db: AsyncSession, transfer: Transfer) -> None:
         "speed_bps": transfer.speed_bps,
         "eta_seconds": transfer.eta_seconds,
     })
+
+
+async def _resolve_orphaned_transfer(db: AsyncSession, transfer: Transfer) -> None:
+    """
+    Handle a transfer whose rclone job is gone (pod restart, node change,
+    rclone daemon restart). Check whether the file reached its destination
+    and either complete or re-queue.
+    """
+    item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
+    item = item_result.scalar_one_or_none()
+    if not item:
+        transfer.status = "cancelled"
+        transfer.error_message = "Media item no longer exists"
+        logger.info("Orphan %s: media item gone, cancelling", transfer.id)
+        return
+
+    rel_path = transfer.dest_path
+
+    if transfer.direction == "freeze":
+        verified = await _verify_cloud_copy(rel_path, item.file_size_bytes)
+        if verified:
+            transfer.status = "completed"
+            transfer.completed_at = datetime.utcnow()
+            logger.info("Orphan %s: %s verified on cloud, completing", transfer.id, item.title)
+            await _on_transfer_complete(db, transfer)
+            return
+    elif transfer.direction == "reheat":
+        nas_path = os.path.join(settings.nas_root, rel_path)
+        if os.path.isfile(nas_path):
+            transfer.status = "completed"
+            transfer.completed_at = datetime.utcnow()
+            item.storage_tier = "hot"
+            item.transfer_direction = None
+            logger.info("Orphan %s: %s found on NAS, completing", transfer.id, item.title)
+            await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title, "tier": "hot"})
+            return
+
+    # File didn't make it — stop any lingering rclone job, then re-queue.
+    # The old job might still be running on a different node's rclone daemon
+    # (pod moved) — we can't reach it, but stopping by job ID is best-effort.
+    await stop_rclone_job(transfer.rclone_job_id)
+    transfer.status = "queued"
+    transfer.rclone_job_id = None
+    transfer.rclone_group = None
+    transfer.started_at = None
+    transfer.bytes_transferred = 0
+    transfer.speed_bps = 0
+    transfer.eta_seconds = None
+    item.storage_tier = "hot" if transfer.direction == "freeze" else "cold"
+    item.transfer_direction = None
+    logger.info("Orphan %s: %s re-queued", transfer.id, item.title)
+    await broadcast({"type": "transfer_failed", "transfer_id": str(transfer.id), "title": item.title, "reason": "orphan_requeued"})
 
 
 async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:

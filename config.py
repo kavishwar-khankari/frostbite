@@ -7,6 +7,9 @@ class Settings(BaseSettings):
 
     # rclone RC endpoints
     rclone_rc_url: str = "http://127.0.0.1:5572"
+    # Comma-separated rclone transfer RC endpoints on all nodes (port 5572).
+    # Used to poll job status across nodes if the pod moves during a transfer.
+    rclone_rc_urls: str = "http://192.168.0.161:5572,http://192.168.0.162:5572,http://192.168.0.163:5572"
     # Comma-separated VFS RC endpoints for every node that mounts the cloud remote.
     # After each freeze/reheat, Frostbite calls vfs/refresh on all of them so every
     # node sees the change immediately (node1=161, node2=162, node3=163/Jellyfin).
