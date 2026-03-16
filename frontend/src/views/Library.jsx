@@ -257,7 +257,7 @@ function SeriesCard({ series }) {
 
   const { data: episodesPage, isFetching } = useQuery({
     queryKey: ['seriesEps', series.series_id],
-    queryFn: () => getItems({ series_id: series.series_id, item_type: 'episode', limit: 500, sort: 'episode_number', order: 'asc' }),
+    queryFn: () => getItems({ series_id: series.series_id, item_type: 'episode', limit: 2000, sort: 'episode_number', order: 'asc' }),
     enabled: open,
     staleTime: 60_000,
   })

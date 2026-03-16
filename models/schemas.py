@@ -11,6 +11,7 @@ class MediaItemResponse(BaseModel):
     jellyfin_id: str
     title: str
     item_type: str
+    series_id: str | None
     series_name: str | None
     season_number: int | None
     episode_number: int | None

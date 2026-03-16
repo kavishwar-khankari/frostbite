@@ -39,7 +39,7 @@ async def list_items(
     search: str | None = Query(None),
     sort: str = Query("temperature", description="temperature, title, file_size_bytes, date_added"),
     order: str = Query("desc", description="asc or desc"),
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, le=2000),
     offset: int = Query(0, ge=0),
 ) -> ItemsPage:
     col = _SORT_COLUMNS.get(sort, MediaItem.temperature)
