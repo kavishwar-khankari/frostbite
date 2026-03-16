@@ -172,12 +172,18 @@ async def run_library_sync() -> dict:
             existing = result.scalar_one_or_none()
 
             if existing:
+                existing.title = compact["title"]
+                existing.series_id = compact["series_id"]
+                existing.series_name = compact["series_name"]
+                existing.season_number = compact["season_number"]
+                existing.episode_number = compact["episode_number"]
                 existing.file_path = file_path
                 existing.file_size_bytes = compact["file_size_bytes"]
                 existing.codec = compact["codec"]
                 existing.resolution = compact["resolution"]
                 existing.storage_tier = tier
                 existing.community_rating = compact["community_rating"]
+                existing.premiere_date = compact["premiere_date"]
                 existing.updated_at = datetime.utcnow()
                 stats["updated"] += 1
             else:

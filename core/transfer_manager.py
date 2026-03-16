@@ -194,7 +194,13 @@ async def _start_next(db: AsyncSession, direction: str) -> None:
 
 async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
-    item = item_result.scalar_one()
+    item = item_result.scalar_one_or_none()
+
+    if item is None:
+        transfer.status = "cancelled"
+        transfer.error_message = "Media item no longer exists in library"
+        logger.info("Transfer %s: media item %s gone from DB, cancelling", transfer.id, transfer.media_item_id)
+        return
 
     rel_path = transfer.source_path
 
@@ -220,6 +226,16 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
         dst_fs = f"{settings.rclone_remote}:"
         nas_path = os.path.join(settings.nas_root, rel_path)
         if not os.path.isfile(nas_path):
+            # File not on NAS — check if it already exists on the cloud
+            # (e.g. manually transferred before Frostbite was set up).
+            already_cold = await _verify_cloud_copy(rel_path, item.file_size_bytes)
+            if already_cold:
+                transfer.status = "cancelled"
+                transfer.error_message = "Already on cloud — skipped"
+                item.storage_tier = "cold"
+                item.transfer_direction = None
+                logger.info("Transfer %s: %s already on cloud, marking cold", transfer.id, item.title)
+                return
             transfer.status = "failed"
             transfer.error_message = f"Source file not found on NAS: {nas_path}"
             logger.error("Transfer %s: file missing on NAS: %s", transfer.id, nas_path)
