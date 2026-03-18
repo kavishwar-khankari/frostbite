@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getTransfers, getWorkerStatus,
@@ -36,7 +36,17 @@ const PAGE_SIZE = 200
 
 export default function Transfers() {
   const [tab, setTab] = useState('all')
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+
+  // Debounce search input to avoid spamming API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput)
+      setOffset(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [dirFilter, setDirFilter] = useState('')
   const [triggerFilter, setTriggerFilter] = useState('')
   const [sort, setSort] = useState('priority')
@@ -64,6 +74,7 @@ export default function Transfers() {
     ...(tab !== 'all' && { status: tab }),
     ...(dirFilter && { direction: dirFilter }),
     ...(triggerFilter && { trigger: triggerFilter }),
+    ...(search.trim() && { search: search.trim() }),
     sort,
     order,
     limit: PAGE_SIZE,
@@ -86,16 +97,8 @@ export default function Transfers() {
   })
   const paused = workerStatus?.paused ?? false
 
-  // Client-side search filters within the current page
-  const displayed = useMemo(() => {
-    if (!search.trim()) return transfers
-    const q = search.toLowerCase()
-    return transfers.filter(t => {
-      const title = (t.item_title ?? t.id).toLowerCase()
-      const series = (t.item_series_name ?? '').toLowerCase()
-      return title.includes(q) || series.includes(q)
-    })
-  }, [transfers, search])
+  // Search is now server-side; displayed = transfers
+  const displayed = transfers
 
   // byStatus counts are from the current page only — used for active/completed tabs
   // For queued tab, totalCount is the real number from the backend
@@ -174,8 +177,8 @@ export default function Transfers() {
         <input
           type="text"
           placeholder="Search by title…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
           className="input text-sm py-1.5 w-56"
         />
 
@@ -288,7 +291,7 @@ export default function Transfers() {
             No transfers match your filters
           </div>
         )}
-        {transfers.map(t => (
+        {displayed.map(t => (
           <div key={t.id} className={`px-4 transition-colors ${selected.has(t.id) ? 'bg-frost-900/10' : ''}`}>
             <div className="flex items-center gap-2">
               <input

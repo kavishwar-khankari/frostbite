@@ -26,6 +26,7 @@ async def list_transfers(
     status: str | None = Query(None),
     direction: str | None = Query(None, description="freeze or reheat"),
     trigger: str | None = Query(None, description="auto_score, manual, space_pressure"),
+    search: str | None = Query(None, description="Search by item title or series name"),
     sort: str = Query("queued_at", description="queued_at, priority"),
     order: str = Query("desc", description="asc or desc"),
     limit: int = Query(200, le=2000),
@@ -39,6 +40,11 @@ async def list_transfers(
             q = q.where(Transfer.direction == direction)
         if trigger:
             q = q.where(Transfer.trigger == trigger)
+        if search:
+            pattern = f"%{search}%"
+            q = q.where(Transfer.media_item.has(
+                MediaItem.title.ilike(pattern) | MediaItem.series_name.ilike(pattern)
+            ))
         return q
 
     # Total count
