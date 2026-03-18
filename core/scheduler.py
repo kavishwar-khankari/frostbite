@@ -89,11 +89,19 @@ async def scoring_sweep() -> None:
     from core.scorer import ItemMeta, PlaybackStats, calculate_temperature
 
     async with async_session_factory() as db:
-        # Only score tdarr-eligible items — Tdarr must confirm a file is in its
-        # final encoded form before Frostbite decides its temperature and whether
-        # to freeze it. Non-eligible items keep temperature=100 (always hot).
+        # Score tdarr-eligible items AND all cold items. Tdarr must confirm a
+        # hot file is in its final encoded form before Frostbite freezes it,
+        # but cold items already passed the gate — they must keep being scored
+        # so their temperature can decay/update even if Tdarr dropped them
+        # after the NAS file was deleted.
+        from sqlalchemy import or_
         result = await db.execute(
-            select(MediaItem).where(MediaItem.tdarr_eligible == True)  # noqa: E712
+            select(MediaItem).where(
+                or_(
+                    MediaItem.tdarr_eligible == True,  # noqa: E712
+                    MediaItem.storage_tier == "cold",
+                )
+            )
         )
         items = list(result.scalars())
         logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))

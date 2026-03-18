@@ -113,7 +113,7 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
             continue
         await _boost_temperature(db, ep, settings.prefetch_boost)
         ep.last_prefetch_at = now
-        if ep.storage_tier == "cold" and ep.tdarr_eligible:
+        if ep.storage_tier == "cold":
             priority = 90 - (i * 10)
             await queue_transfer(db, ep.id, direction="reheat", trigger="prefetch", priority=priority)
 
@@ -134,7 +134,7 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
             )
         )
         premiere = premiere_result.scalar_one_or_none()
-        if premiere and premiere.storage_tier == "cold" and premiere.tdarr_eligible:
+        if premiere and premiere.storage_tier == "cold":
             if not premiere.last_prefetch_at or premiere.last_prefetch_at <= cooldown_cutoff:
                 premiere.last_prefetch_at = now
                 await queue_transfer(db, premiere.id, direction="reheat", trigger="prefetch", priority=75)

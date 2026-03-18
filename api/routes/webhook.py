@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import APIRouter, Request
@@ -21,9 +22,9 @@ async def receive_jellyfin_webhook(request: Request) -> dict:
         return {"ok": True}
 
     try:
-        payload = await request.json()
-    except Exception:
-        logger.warning("Jellyfin webhook: invalid JSON body: %r", body[:200])
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning("Jellyfin webhook: invalid JSON (%s): %r", exc, body[:500])
         return {"ok": True}
 
     event_type = payload.get("NotificationType")
