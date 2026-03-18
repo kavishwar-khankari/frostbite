@@ -26,12 +26,28 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_or_create_item(db: AsyncSession, event: PlaybackEventIn) -> MediaItem | None:
+    # Primary lookup by jellyfin_id
     result = await db.execute(
         select(MediaItem).where(MediaItem.jellyfin_id == event.jellyfin_id)
     )
     item = result.scalar_one_or_none()
     if item:
         return item
+
+    # Fallback: Jellyfin webhook may send a different ID format than the Items API.
+    # Try matching by file_path instead.
+    if event.file_path:
+        result = await db.execute(
+            select(MediaItem).where(MediaItem.file_path == event.file_path)
+        )
+        item = result.scalar_one_or_none()
+        if item:
+            logger.info(
+                "Matched item by file_path (webhook id %s != db id %s): %s",
+                event.jellyfin_id, item.jellyfin_id, item.title,
+            )
+            return item
+
     if not event.file_path or not event.item_type:
         return None
 

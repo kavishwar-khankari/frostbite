@@ -28,7 +28,10 @@ async def receive_jellyfin_webhook(request: Request) -> dict:
 
     event_type = payload.get("NotificationType")
 
-    logger.info("Jellyfin webhook received: %s", event_type)
+    logger.info("Jellyfin webhook received: %s (ItemId=%s, Item.Id=%s)",
+                event_type,
+                payload.get("ItemId"),
+                (payload.get("Item") or {}).get("Id"))
 
     if event_type == "PlaybackStart":
         event = PlaybackEventIn.from_webhook(payload)
