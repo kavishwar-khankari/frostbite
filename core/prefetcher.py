@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_or_create_item(db: AsyncSession, event: PlaybackEventIn) -> MediaItem | None:
-    # Primary lookup by jellyfin_id
+    # Primary lookup by jellyfin_id (strip hyphens — webhook sends UUID format,
+    # library sync stores bare hex)
+    normalized_id = event.jellyfin_id.replace("-", "")
     result = await db.execute(
-        select(MediaItem).where(MediaItem.jellyfin_id == event.jellyfin_id)
+        select(MediaItem).where(MediaItem.jellyfin_id == normalized_id)
     )
     item = result.scalar_one_or_none()
     if item:
