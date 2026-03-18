@@ -15,8 +15,13 @@ const SETTING_META = {
   },
   prefetch_boost: {
     label: 'Prefetch Boost',
-    desc: 'Temperature boost applied when a partially-watched item is predicted to be resumed.',
+    desc: 'Temperature boost applied to the next episodes when an episode is played.',
     min: 0, max: 100, step: 1, unit: '°',
+  },
+  prefetch_cooldown_days: {
+    label: 'Prefetch Cooldown',
+    desc: 'Days to wait before an episode can receive another prefetch boost. Prevents repeated plays from inflating temperature.',
+    min: 1, max: 30, step: 1, unit: ' days',
   },
   freeze_window_start: {
     label: 'Freeze Window Start',

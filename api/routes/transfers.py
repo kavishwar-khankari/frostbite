@@ -166,6 +166,8 @@ async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferRespo
         trigger="manual",
         priority=100,
     )
+    if not new_transfer:
+        raise HTTPException(status_code=409, detail="A transfer is already queued or active for this item")
     reload = await db.execute(
         select(Transfer).options(_WITH_ITEM).where(Transfer.id == new_transfer.id)
     )

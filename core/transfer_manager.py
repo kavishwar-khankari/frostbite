@@ -52,8 +52,21 @@ async def queue_transfer(
     direction: str,
     trigger: str,
     priority: int = 50,
-) -> Transfer:
-    """Insert a transfer record and return it. Caller must commit."""
+) -> Transfer | None:
+    """Insert a transfer record and return it. Caller must commit.
+    Returns None if a queued/active transfer already exists for this item+direction."""
+    # Dedup: skip if there's already a pending transfer for this item in the same direction
+    existing = await db.execute(
+        select(Transfer).where(
+            Transfer.media_item_id == media_item_id,
+            Transfer.direction == direction,
+            Transfer.status.in_(("queued", "active")),
+        )
+    )
+    if existing.scalar_one_or_none():
+        logger.debug("Transfer already queued/active for item %s (%s), skipping", media_item_id, direction)
+        return None
+
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == media_item_id))
     item = item_result.scalar_one()
 

@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     freeze_threshold: float = 25.0
     reheat_threshold: float = 60.0
     prefetch_boost: float = 40.0
+    prefetch_cooldown_days: int = 3
 
     # Transfer settings
     max_concurrent_reheats: int = 2

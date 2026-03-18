@@ -40,6 +40,8 @@ async def _queue_manual(jellyfin_id: str, direction: str, db: DBSession) -> Tran
         trigger="manual",
         priority=100,
     )
+    if not transfer:
+        raise HTTPException(status_code=409, detail="A transfer is already queued or active for this item")
     return transfer
 
 

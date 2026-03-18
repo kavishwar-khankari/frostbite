@@ -8,7 +8,7 @@ Entry points called by the webhook route:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +94,9 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
     if not item.series_id or item.episode_number is None:
         return
 
+    now = datetime.utcnow()
+    cooldown_cutoff = now - timedelta(days=settings.prefetch_cooldown_days)
+
     result = await db.execute(
         select(MediaItem)
         .where(
@@ -105,7 +108,11 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
         .order_by(MediaItem.episode_number)
     )
     for i, ep in enumerate(result.scalars()):
+        # Skip if this episode was already prefetched recently
+        if ep.last_prefetch_at and ep.last_prefetch_at > cooldown_cutoff:
+            continue
         await _boost_temperature(db, ep, settings.prefetch_boost)
+        ep.last_prefetch_at = now
         if ep.storage_tier == "cold" and ep.tdarr_eligible:
             priority = 90 - (i * 10)
             await queue_transfer(db, ep.id, direction="reheat", trigger="prefetch", priority=priority)
@@ -128,7 +135,9 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
         )
         premiere = premiere_result.scalar_one_or_none()
         if premiere and premiere.storage_tier == "cold" and premiere.tdarr_eligible:
-            await queue_transfer(db, premiere.id, direction="reheat", trigger="prefetch", priority=75)
+            if not premiere.last_prefetch_at or premiere.last_prefetch_at <= cooldown_cutoff:
+                premiere.last_prefetch_at = now
+                await queue_transfer(db, premiere.id, direction="reheat", trigger="prefetch", priority=75)
 
 
 # ── Public handlers ───────────────────────────────────────────────────────────
