@@ -32,7 +32,7 @@ export default function Overview() {
     queryFn: getDashboard,
     // Poll faster when transfers are active so progress bars update smoothly
     refetchInterval: (query) =>
-      (query.state.data?.active_transfers?.length ?? 0) > 0 ? 3_000 : 15_000,
+      (query.state.data?.active_transfers?.length ?? 0) > 0 ? 2_000 : 10_000,
   })
   const { data: appSettings } = useQuery({
     queryKey: ['settings'],

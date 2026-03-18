@@ -84,7 +84,7 @@ export default function Transfers() {
   const { data: page = { items: [], total: 0 }, isLoading } = useQuery({
     queryKey: ['transfers', queryParams],
     queryFn: () => getTransfers(queryParams),
-    refetchInterval: 5_000,
+    refetchInterval: 2_000,
   })
 
   const transfers = page.items ?? []
@@ -93,7 +93,7 @@ export default function Transfers() {
   const { data: workerStatus } = useQuery({
     queryKey: ['worker-status'],
     queryFn: getWorkerStatus,
-    refetchInterval: 5_000,
+    refetchInterval: 2_000,
   })
   const paused = workerStatus?.paused ?? false
 
