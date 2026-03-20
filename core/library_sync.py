@@ -59,7 +59,7 @@ def _extract_compact(item: dict, source: dict) -> dict:
     streams = source.get("MediaStreams") or []
     video = next((s for s in streams if s.get("Type") == "Video"), None)
     return {
-        "jellyfin_id": item["Id"],
+        "jellyfin_id": item["Id"].replace("-", ""),
         "title": item.get("Name", item["Id"]),
         "item_type": (item.get("Type") or "unknown").lower(),
         "series_id": item.get("SeriesId"),
