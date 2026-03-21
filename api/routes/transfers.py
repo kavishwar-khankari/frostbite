@@ -109,6 +109,7 @@ class BulkIdsRequest(BaseModel):
 class BulkActionResult(BaseModel):
     cancelled: int = 0
     bumped: int = 0
+    retried: int = 0
     skipped: int = 0
 
 
@@ -144,6 +145,35 @@ async def bulk_bump_transfers(body: BulkIdsRequest, db: DBSession) -> BulkAction
         t.priority = 100
     await db.commit()
     return BulkActionResult(bumped=len(transfers), skipped=len(body.ids) - len(transfers))
+
+
+@router.post("/transfers/bulk-retry", response_model=BulkActionResult)
+async def bulk_retry_transfers(body: BulkIdsRequest, db: DBSession) -> BulkActionResult:
+    """Re-queue failed/cancelled transfers."""
+    from core.transfer_manager import queue_transfer
+
+    result = await db.execute(
+        select(Transfer).where(Transfer.id.in_(body.ids))
+    )
+    transfers = list(result.scalars())
+    retried = skipped = 0
+    for t in transfers:
+        if t.status not in ("failed", "cancelled"):
+            skipped += 1
+            continue
+        new = await queue_transfer(
+            db=db,
+            media_item_id=t.media_item_id,
+            direction=t.direction,
+            trigger="manual",
+            priority=t.priority,
+        )
+        if new:
+            retried += 1
+        else:
+            skipped += 1
+    await db.commit()
+    return BulkActionResult(retried=retried, skipped=skipped)
 
 
 @router.post("/transfers/{transfer_id}/retry", response_model=TransferResponse)

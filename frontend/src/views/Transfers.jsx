@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getTransfers, getWorkerStatus,
   pauseAllTransfers, resumeTransfers,
-  cancelTransfer, bulkCancelTransfers, bulkBumpTransfers,
+  cancelTransfer, bulkCancelTransfers, bulkBumpTransfers, bulkRetryTransfers,
 } from '../api/client'
 import TransferRow from '../components/TransferRow'
 
@@ -140,6 +140,10 @@ export default function Transfers() {
     mutationFn: () => bulkBumpTransfers([...selected]),
     onSuccess: invalidate,
   })
+  const bulkRetry = useMutation({
+    mutationFn: () => bulkRetryTransfers([...selected]),
+    onSuccess: invalidate,
+  })
 
   return (
     <div className="p-6 space-y-4">
@@ -235,6 +239,13 @@ export default function Transfers() {
             disabled={bulkBump.isPending}
           >
             Bump to front
+          </button>
+          <button
+            className="text-xs py-1 px-3 bg-amber-600/20 text-amber-400 border border-amber-600/40 rounded hover:bg-amber-600/30 transition-colors"
+            onClick={() => bulkRetry.mutate()}
+            disabled={bulkRetry.isPending}
+          >
+            Retry selected
           </button>
           <button
             className="text-xs text-gray-500 hover:text-gray-300 ml-auto"

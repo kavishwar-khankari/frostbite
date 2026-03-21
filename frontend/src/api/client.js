@@ -60,6 +60,9 @@ export const bulkCancelTransfers = (ids) =>
 export const bulkBumpTransfers = (ids) =>
   req('/transfers/bulk-bump', { method: 'POST', body: JSON.stringify({ ids }) })
 
+export const bulkRetryTransfers = (ids) =>
+  req('/transfers/bulk-retry', { method: 'POST', body: JSON.stringify({ ids }) })
+
 export const cancelTransfer = (id) =>
   req(`/transfers/${id}/cancel`, { method: 'POST' })
 
