@@ -172,6 +172,7 @@ async def bulk_retry_transfers(body: BulkIdsRequest, db: DBSession) -> BulkActio
                 priority=t.priority,
             )
             if new:
+                t.status = "retried"
                 retried += 1
             else:
                 skipped += 1
@@ -205,6 +206,8 @@ async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferRespo
     )
     if not new_transfer:
         raise HTTPException(status_code=409, detail="A transfer is already queued or active for this item")
+    transfer.status = "retried"
+    await db.commit()
     reload = await db.execute(
         select(Transfer).options(_WITH_ITEM).where(Transfer.id == new_transfer.id)
     )

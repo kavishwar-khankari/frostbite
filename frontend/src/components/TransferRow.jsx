@@ -28,6 +28,7 @@ const STATUS_COLOR = {
   completed: 'text-emerald-400',
   failed:    'text-red-400',
   cancelled: 'text-gray-500',
+  retried:   'text-amber-400',
 }
 
 export default function TransferRow({ transfer }) {
