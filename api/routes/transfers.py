@@ -151,6 +151,8 @@ async def bulk_bump_transfers(body: BulkIdsRequest, db: DBSession) -> BulkAction
 async def bulk_retry_transfers(body: BulkIdsRequest, db: DBSession) -> BulkActionResult:
     """Re-queue failed/cancelled transfers."""
     from core.transfer_manager import queue_transfer
+    import logging
+    logger = logging.getLogger(__name__)
 
     result = await db.execute(
         select(Transfer).where(Transfer.id.in_(body.ids))
@@ -161,18 +163,23 @@ async def bulk_retry_transfers(body: BulkIdsRequest, db: DBSession) -> BulkActio
         if t.status not in ("failed", "cancelled"):
             skipped += 1
             continue
-        new = await queue_transfer(
-            db=db,
-            media_item_id=t.media_item_id,
-            direction=t.direction,
-            trigger="manual",
-            priority=t.priority,
-        )
-        if new:
-            retried += 1
-        else:
+        try:
+            new = await queue_transfer(
+                db=db,
+                media_item_id=t.media_item_id,
+                direction=t.direction,
+                trigger="manual",
+                priority=t.priority,
+            )
+            if new:
+                retried += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            logger.warning("Bulk retry: failed to re-queue transfer %s: %s", t.id, exc)
             skipped += 1
     await db.commit()
+    logger.info("Bulk retry: %d retried, %d skipped out of %d", retried, skipped, len(transfers))
     return BulkActionResult(retried=retried, skipped=skipped)
 
 
