@@ -12,9 +12,9 @@ Relevant transcode statuses Tdarr returns:
   'StagedForNextQueue'— about to be queued, not eligible
   ''  / None          — Tdarr hasn't seen this file yet, not eligible
 
-API reference: /api/v2/cruddb
-  collection: FileJSONDB
-  modes: getAll, getById, insert, update, removeOne, removeAll
+API reference:
+  /api/v2/cruddb       — low-level CRUD (getById, getAll, etc.)
+  /api/v2/client/files — paginated, filterable file table (used by Tdarr UI)
 """
 
 import logging
@@ -26,10 +26,12 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 # These statuses mean Tdarr is done with the file — safe for Frostbite to take over.
-# "Transcode success" = file was transcoded and succeeded.
-# "Not required"     = file already meets the target codec, no transcode needed.
-# "Stream copy"      = copied without re-encoding (lightweight transcode).
 _ELIGIBLE_STATUSES = {"Transcode success", "Not required", "Stream copy"}
+
+# Tdarr UI table name for the "Transcode: Success/Not Required" tab
+_TABLE_TRANSCODE_SUCCESS = "transcode_success_not_required"
+
+_PAGE_SIZE = 500
 
 
 class TdarrClient:
@@ -56,58 +58,61 @@ class TdarrClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                # getById returns the doc directly or null
                 if isinstance(data, dict) and data.get("_id"):
                     return data
                 return None
-        except httpx.HTTPError as exc:
-            logger.warning("Tdarr API error for %s: %s", file_path, exc)
+        except Exception as exc:
+            logger.debug("Tdarr lookup miss for %s: %s", file_path, exc)
             return None
 
     async def get_eligible_files(self) -> list[dict]:
         """
-        Fetch all files Tdarr considers done (transcode not required or stream copied).
-        Uses getAll and filters client-side.
+        Fetch all files Tdarr considers done using the paginated client/files
+        endpoint. Fetches in pages of 500 — much faster than getAll.
         """
-        try:
-            async with httpx.AsyncClient(timeout=180, headers=self._headers) as client:
+        all_files: list[dict] = []
+
+        async with httpx.AsyncClient(timeout=30, headers=self._headers) as client:
+            start = 0
+            while True:
                 resp = await client.post(
-                    f"{self._base}/api/v2/cruddb",
+                    f"{self._base}/api/v2/client/files",
                     json={
                         "data": {
-                            "collection": "FileJSONDB",
-                            "mode": "getAll",
+                            "start": start,
+                            "pageSize": _PAGE_SIZE,
+                            "filters": [],
+                            "sorts": [],
+                            "opts": {
+                                "table": _TABLE_TRANSCODE_SUCCESS,
+                            },
                         }
                     },
                 )
                 if not resp.is_success:
-                    logger.warning(
-                        "Tdarr getAll failed %d: %s",
-                        resp.status_code, resp.text[:300],
+                    raise RuntimeError(
+                        f"Tdarr client/files failed {resp.status_code}: {resp.text[:300]}"
                     )
-                    return []
                 data = resp.json()
-                if isinstance(data, list):
-                    docs = data
-                elif isinstance(data, dict):
-                    docs = data.get("docs") or data.get("array") or list(data.values())
-                else:
-                    docs = []
-                # Log the distinct status values we see for debugging
-                from collections import Counter
-                status_counts = Counter(
-                    d.get("TranscodeDecisionMaker", "<missing>")
-                    for d in docs if isinstance(d, dict)
-                )
-                logger.info("Tdarr TranscodeDecisionMaker distribution: %s", dict(status_counts))
 
-                eligible = [d for d in docs if isinstance(d, dict)
-                            and d.get("TranscodeDecisionMaker") in _ELIGIBLE_STATUSES]
-                logger.info("Tdarr eligible files: %d / %d total", len(eligible), len(docs))
-                return eligible
-        except Exception as exc:
-            logger.warning("Tdarr bulk fetch failed (%s): %s", type(exc).__name__, exc)
-            raise RuntimeError(f"Tdarr fetch failed ({type(exc).__name__}): {exc}") from exc
+                # Response format: { files: [...], totalCount: N } or just [...]
+                if isinstance(data, dict):
+                    files = data.get("files") or data.get("array") or []
+                    total = data.get("totalCount", 0)
+                elif isinstance(data, list):
+                    files = data
+                    total = len(files)
+                else:
+                    break
+
+                all_files.extend(f for f in files if isinstance(f, dict))
+
+                start += _PAGE_SIZE
+                if start >= total or not files:
+                    break
+
+        logger.info("Tdarr eligible files: %d fetched from paginated API", len(all_files))
+        return all_files
 
     def is_eligible(self, tdarr_record: dict | None) -> bool:
         """Given a Tdarr file record, return whether Frostbite can manage it."""
