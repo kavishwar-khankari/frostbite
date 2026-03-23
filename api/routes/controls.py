@@ -116,7 +116,7 @@ async def trigger_tdarr_sync() -> dict:
         await sync_tdarr_eligibility()
         return {"status": "completed"}
     except Exception as exc:
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 @router.post("/playback/import-history")
@@ -131,7 +131,7 @@ async def import_playback_history() -> dict:
         result = await sync_playback_from_reporting(full_reimport=True)
         return {"status": "completed", **(result if isinstance(result, dict) else {})}
     except Exception as exc:
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 @router.post("/scoring/run")
@@ -142,7 +142,7 @@ async def trigger_scoring_sweep() -> dict:
         await scoring_sweep()
         return {"status": "completed"}
     except Exception as exc:
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 @router.post("/sync/library")
@@ -153,7 +153,7 @@ async def trigger_library_sync() -> dict:
         result = await run_library_sync()
         return {"status": "completed", **(result if isinstance(result, dict) else {})}
     except Exception as exc:
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 @router.post("/reheat", response_model=TransferResponse)
