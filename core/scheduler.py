@@ -20,7 +20,7 @@ _scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 
 async def start_scheduler() -> None:
-    _scheduler.add_job(sync_tdarr_eligibility, "interval", minutes=10, id="tdarr_sync")
+    _scheduler.add_job(_safe_tdarr_sync, "interval", minutes=10, id="tdarr_sync")
     _scheduler.add_job(sync_playback_from_reporting, "interval", minutes=5, id="playback_sync")
     _scheduler.add_job(scoring_sweep, "interval", minutes=15, id="scoring_sweep")
     _scheduler.add_job(check_nas_space, "interval", minutes=5, id="nas_space")
@@ -38,6 +38,14 @@ async def stop_scheduler() -> None:
 
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
+
+async def _safe_tdarr_sync() -> None:
+    """Wrapper for scheduled runs — logs errors instead of crashing."""
+    try:
+        await sync_tdarr_eligibility()
+    except Exception:
+        logger.exception("Scheduled Tdarr sync failed")
+
 
 async def sync_tdarr_eligibility() -> None:
     """

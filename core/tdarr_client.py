@@ -70,7 +70,7 @@ class TdarrClient:
         Uses getAll and filters client-side.
         """
         try:
-            async with httpx.AsyncClient(timeout=60, headers=self._headers) as client:
+            async with httpx.AsyncClient(timeout=180, headers=self._headers) as client:
                 resp = await client.post(
                     f"{self._base}/api/v2/cruddb",
                     json={
@@ -107,7 +107,7 @@ class TdarrClient:
                 return eligible
         except Exception as exc:
             logger.warning("Tdarr bulk fetch failed (%s): %s", type(exc).__name__, exc)
-            return []
+            raise RuntimeError(f"Tdarr fetch failed ({type(exc).__name__}): {exc}") from exc
 
     def is_eligible(self, tdarr_record: dict | None) -> bool:
         """Given a Tdarr file record, return whether Frostbite can manage it."""
