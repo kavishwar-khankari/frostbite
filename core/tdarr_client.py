@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _ELIGIBLE_STATUSES = {"Transcode success", "Not required", "Stream copy"}
 
 # Tdarr UI table name for the "Transcode: Success/Not Required" tab
-_TABLE_TRANSCODE_SUCCESS = "transcode_success_not_required"
+_TABLE_TRANSCODE_SUCCESS = "table2"
 
 _PAGE_SIZE = 500
 
@@ -76,7 +76,7 @@ class TdarrClient:
             start = 0
             while True:
                 resp = await client.post(
-                    f"{self._base}/api/v2/client/files",
+                    f"{self._base}/api/v2/client/status-tables",
                     json={
                         "data": {
                             "start": start,
