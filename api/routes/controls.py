@@ -110,10 +110,13 @@ async def reheat_series(body: SeriesActionRequest, db: DBSession) -> dict:
 
 @router.post("/tdarr/sync")
 async def trigger_tdarr_sync() -> dict:
-    """Trigger a Tdarr eligibility sync immediately in the background."""
+    """Trigger a Tdarr eligibility sync. Runs synchronously and returns result."""
     from core.scheduler import sync_tdarr_eligibility
-    asyncio.get_event_loop().create_task(sync_tdarr_eligibility())
-    return {"status": "started"}
+    try:
+        await sync_tdarr_eligibility()
+        return {"status": "completed"}
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc)}
 
 
 @router.post("/playback/import-history")
@@ -121,27 +124,36 @@ async def import_playback_history() -> dict:
     """
     Trigger a full reimport of all historical play sessions from the Jellyfin
     Playback Reporting plugin.  Resets the sync cursor so everything is
-    re-fetched from the beginning of time.  Runs in the background.
+    re-fetched from the beginning of time.
     """
     from core.playback_import import sync_playback_from_reporting
-    asyncio.get_event_loop().create_task(sync_playback_from_reporting(full_reimport=True))
-    return {"status": "started"}
+    try:
+        result = await sync_playback_from_reporting(full_reimport=True)
+        return {"status": "completed", **(result if isinstance(result, dict) else {})}
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc)}
 
 
 @router.post("/scoring/run")
 async def trigger_scoring_sweep() -> dict:
-    """Trigger a scoring sweep immediately in the background."""
+    """Trigger a scoring sweep immediately."""
     from core.scheduler import scoring_sweep
-    asyncio.get_event_loop().create_task(scoring_sweep())
-    return {"status": "started"}
+    try:
+        await scoring_sweep()
+        return {"status": "completed"}
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc)}
 
 
 @router.post("/sync/library")
 async def trigger_library_sync() -> dict:
-    """Trigger a full library sync in the background. Returns immediately."""
+    """Trigger a full library sync. Returns result when complete."""
     from core.library_sync import run_library_sync
-    asyncio.get_event_loop().create_task(run_library_sync())
-    return {"status": "started"}
+    try:
+        result = await run_library_sync()
+        return {"status": "completed", **(result if isinstance(result, dict) else {})}
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc)}
 
 
 @router.post("/reheat", response_model=TransferResponse)

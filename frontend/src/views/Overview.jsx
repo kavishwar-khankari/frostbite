@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getDashboard, getScoreHistory, getSettings, triggerLibrarySync, triggerScoringRun, triggerTdarrSync, importPlaybackHistory } from '../api/client'
 import StatCard from '../components/StatCard'
@@ -25,8 +26,27 @@ const CHART_STYLE = {
   labelStyle: { color: '#9ca3af' },
 }
 
+function Toast({ message, type, onClose }) {
+  const bg = type === 'error' ? 'bg-red-600/90 border-red-500' : 'bg-emerald-600/90 border-emerald-500'
+  return (
+    <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg border text-sm text-white shadow-lg ${bg} animate-fade-in`}>
+      <div className="flex items-center gap-3">
+        <span>{message}</span>
+        <button onClick={onClose} className="text-white/70 hover:text-white">✕</button>
+      </div>
+    </div>
+  )
+}
+
 export default function Overview() {
   const qc = useQueryClient()
+  const [toast, setToast] = useState(null)
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
+
   const { data: stats, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
@@ -46,21 +66,36 @@ export default function Overview() {
     refetchInterval: 60_000,
   })
 
+  const onDone = (label) => (data) => {
+    qc.invalidateQueries({ queryKey: ['dashboard'] })
+    if (data?.status === 'failed') {
+      showToast(`${label} failed: ${data.error}`, 'error')
+    } else {
+      const extra = data?.total != null ? ` (${data.new ?? 0} new, ${data.updated ?? 0} updated)` : ''
+      showToast(`${label} completed${extra}`)
+    }
+  }
+  const onErr = (label) => (err) => showToast(`${label} failed: ${err.message}`, 'error')
+
   const syncMut = useMutation({
     mutationFn: triggerLibrarySync,
-    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 3000),
+    onSuccess: onDone('Library sync'),
+    onError: onErr('Library sync'),
   })
   const scoreMut = useMutation({
     mutationFn: triggerScoringRun,
-    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 20_000),
+    onSuccess: onDone('Scoring sweep'),
+    onError: onErr('Scoring sweep'),
   })
   const tdarrSyncMut = useMutation({
     mutationFn: triggerTdarrSync,
-    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 15_000),
+    onSuccess: onDone('Tdarr sync'),
+    onError: onErr('Tdarr sync'),
   })
   const importHistoryMut = useMutation({
     mutationFn: importPlaybackHistory,
-    onSuccess: () => setTimeout(() => qc.invalidateQueries({ queryKey: ['dashboard'] }), 30_000),
+    onSuccess: onDone('Playback import'),
+    onError: onErr('Playback import'),
   })
 
   const chartData = history.map(h => ({
@@ -82,6 +117,7 @@ export default function Overview() {
 
   return (
     <div className="p-6 space-y-6">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

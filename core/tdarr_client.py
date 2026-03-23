@@ -105,8 +105,8 @@ class TdarrClient:
                             and d.get("TranscodeDecisionMaker") in _ELIGIBLE_STATUSES]
                 logger.info("Tdarr eligible files: %d / %d total", len(eligible), len(docs))
                 return eligible
-        except httpx.HTTPError as exc:
-            logger.warning("Tdarr bulk fetch failed: %s", exc)
+        except Exception as exc:
+            logger.warning("Tdarr bulk fetch failed (%s): %s", type(exc).__name__, exc)
             return []
 
     def is_eligible(self, tdarr_record: dict | None) -> bool:
