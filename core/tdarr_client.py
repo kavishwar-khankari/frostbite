@@ -39,14 +39,16 @@ class TdarrClient:
         self._base = settings.tdarr_url.rstrip("/")
         self._headers = {"x-api-key": settings.tdarr_api_key} if settings.tdarr_api_key else {}
 
-    async def get_file_status(self, file_path: str) -> dict | None:
+    async def get_file_status(self, file_path: str, client: httpx.AsyncClient | None = None) -> dict | None:
         """
         Query Tdarr for a specific file by its absolute path (used as docID).
         Returns the Tdarr file record or None if not found.
+        Accepts an optional shared httpx client for batch use.
         """
         try:
-            async with httpx.AsyncClient(timeout=10, headers=self._headers) as client:
-                resp = await client.post(
+            c = client or httpx.AsyncClient(timeout=10, headers=self._headers)
+            try:
+                resp = await c.post(
                     f"{self._base}/api/v2/cruddb",
                     json={
                         "data": {
@@ -61,6 +63,9 @@ class TdarrClient:
                 if isinstance(data, dict) and data.get("_id"):
                     return data
                 return None
+            finally:
+                if client is None:
+                    await c.aclose()
         except Exception as exc:
             logger.debug("Tdarr lookup miss for %s: %s", file_path, exc)
             return None

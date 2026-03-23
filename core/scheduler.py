@@ -56,38 +56,47 @@ async def sync_tdarr_eligibility() -> None:
     Runs every 10 minutes.
     """
     client = TdarrClient()
+    eligible_files = await client.get_eligible_files()
+    if not eligible_files:
+        logger.info("Tdarr sync: no eligible files returned")
+        return
+
+    # Build a set of path stems (without extension) since Tdarr may change
+    # the container format during transcode (e.g. .mkv → .mp4).
+    done_stems: set[str] = set()
+    for f in eligible_files:
+        for key in ("_id", "file"):
+            val = f.get(key)
+            if val:
+                done_stems.add(os.path.splitext(val)[0])
+
+    logger.info("Tdarr sync: %d done stems from %d eligible files", len(done_stems), len(eligible_files))
 
     async with async_session_factory() as db:
         result = await db.execute(
             select(MediaItem).where(MediaItem.tdarr_eligible == False)  # noqa: E712
         )
-        items = list(result.scalars())
-        if not items:
-            logger.info("Tdarr sync: all items already eligible, nothing to check")
-            return
-
-        logger.info("Tdarr sync: checking %d non-eligible items against Tdarr", len(items))
         newly_eligible = 0
-        for item in items:
-            # Try the file_path as-is first (Jellyfin mount path).
-            # If not found, try the Tdarr mount path variant.
-            record = await client.get_file_status(item.file_path)
-            if not record:
+        for item in result.scalars():
+            item_stem = os.path.splitext(item.file_path)[0]
+            # Direct stem match (same mount prefix)
+            match = item_stem in done_stems
+            if not match:
+                # Translate Jellyfin prefix → Tdarr prefix and try again
                 try:
-                    rel = os.path.relpath(item.file_path, settings.jellyfin_media_root)
-                    tdarr_path = os.path.join(settings.tdarr_media_root, rel)
-                    record = await client.get_file_status(tdarr_path)
-                except (ValueError, AttributeError):
+                    rel = os.path.relpath(item_stem, settings.jellyfin_media_root)
+                    tdarr_stem = os.path.join(settings.tdarr_media_root, rel)
+                    match = tdarr_stem in done_stems
+                except ValueError:
                     pass
-
-            if record and client.is_eligible(record):
+            if match:
                 item.tdarr_eligible = True
                 item.tdarr_status = "done"
                 newly_eligible += 1
 
         if newly_eligible:
             await db.commit()
-        logger.info("Tdarr sync: %d / %d items newly eligible for scoring", newly_eligible, len(items))
+        logger.info("Tdarr sync: %d items newly eligible for scoring", newly_eligible)
 
 
 async def scoring_sweep() -> None:

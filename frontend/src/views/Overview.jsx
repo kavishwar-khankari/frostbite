@@ -44,7 +44,7 @@ export default function Overview() {
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
-    setTimeout(() => setToast(null), 5000)
+    setTimeout(() => setToast(null), 15000)
   }
 
   const { data: stats, isLoading } = useQuery({
