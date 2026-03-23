@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Tdarr
     tdarr_url: str = "http://tdarr-server.tdarr.svc.cluster.local:8265"
     tdarr_api_key: str = ""  # optional — leave empty if Tdarr auth is disabled
+    tdarr_media_root: str = "/media"  # mount path Tdarr uses for media files
 
     # Sonarr
     sonarr_url: str = "http://arr-stack-service.arr-stack.svc.cluster.local:8989"
