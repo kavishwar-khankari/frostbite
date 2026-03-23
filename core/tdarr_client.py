@@ -31,7 +31,7 @@ _ELIGIBLE_STATUSES = {"Transcode success", "Not required", "Stream copy"}
 # Tdarr UI table name for the "Transcode: Success/Not Required" tab
 _TABLE_TRANSCODE_SUCCESS = "table2"
 
-_PAGE_SIZE = 100
+_PAGE_SIZE = 500
 
 
 class TdarrClient:
