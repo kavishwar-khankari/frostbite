@@ -1,5 +1,6 @@
 """APScheduler periodic tasks."""
 
+import asyncio
 import logging
 import os
 from datetime import datetime
@@ -49,47 +50,53 @@ async def _safe_tdarr_sync() -> None:
 
 async def sync_tdarr_eligibility() -> None:
     """
-    Ask Tdarr for all files it considers done (AV1 encode complete or not required).
-    Flip tdarr_eligible=True on matching media_items so they enter the scoring cycle.
+    Check Tdarr for each non-eligible item individually.
+    Flip tdarr_eligible=True on items Tdarr considers done so they enter the scoring cycle.
     Runs every 10 minutes.
     """
     client = TdarrClient()
-    eligible_files = await client.get_eligible_files()
-    if not eligible_files:
-        return
-
-    # Build a set of absolute paths Tdarr says are done.
-    # Tdarr uses file path as the document _id; "file" field may also be present.
-    done_paths: set[str] = {
-        f.get("_id") or f.get("file")
-        for f in eligible_files
-        if f.get("_id") or f.get("file")
-    }
 
     async with async_session_factory() as db:
         result = await db.execute(
             select(MediaItem).where(MediaItem.tdarr_eligible == False)  # noqa: E712
         )
+        items = list(result.scalars())
+        if not items:
+            return
+
+        logger.info("Tdarr sync: checking %d non-eligible items", len(items))
         newly_eligible = 0
-        for item in result.scalars():
-            # file_path uses Jellyfin's internal prefix (e.g. /media_2/...).
-            # Tdarr may use a different mount — try exact match first,
-            # then suffix match on the relative portion.
-            match = item.file_path in done_paths
-            if not match:
+        checked = 0
+
+        for item in items:
+            # Try Tdarr lookup by file_path directly (Tdarr uses path as _id)
+            record = await client.get_file_status(item.file_path)
+
+            # Fallback: Tdarr may use a different mount prefix than Jellyfin.
+            # Try the NAS path instead.
+            if record is None:
                 try:
                     rel = os.path.relpath(item.file_path, settings.jellyfin_media_root)
-                    match = any(p.endswith(rel) for p in done_paths)
+                    nas_path = os.path.join(settings.nas_root, rel)
+                    record = await client.get_file_status(nas_path)
                 except ValueError:
                     pass
-            if match:
+
+            if client.is_eligible(record):
                 item.tdarr_eligible = True
                 item.tdarr_status = "done"
                 newly_eligible += 1
 
+            checked += 1
+            # Commit in batches of 100 and yield to event loop
+            if checked % 100 == 0:
+                if newly_eligible:
+                    await db.commit()
+                await asyncio.sleep(0)
+
         if newly_eligible:
             await db.commit()
-            logger.info("Tdarr sync: %d items newly eligible for scoring", newly_eligible)
+        logger.info("Tdarr sync: %d newly eligible out of %d checked", newly_eligible, checked)
 
 
 async def scoring_sweep() -> None:
