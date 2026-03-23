@@ -72,7 +72,7 @@ class TdarrClient:
         """
         all_files: list[dict] = []
 
-        async with httpx.AsyncClient(timeout=30, headers=self._headers) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=240), headers=self._headers) as client:
             start = 0
             while True:
                 resp = await client.post(
