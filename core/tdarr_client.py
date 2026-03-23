@@ -31,7 +31,7 @@ _ELIGIBLE_STATUSES = {"Transcode success", "Not required", "Stream copy"}
 # Tdarr UI table name for the "Transcode: Success/Not Required" tab
 _TABLE_TRANSCODE_SUCCESS = "table2"
 
-_PAGE_SIZE = 500
+_PAGE_SIZE = 100
 
 
 class TdarrClient:
@@ -67,15 +67,17 @@ class TdarrClient:
 
     async def get_eligible_files(self) -> list[dict]:
         """
-        Fetch all files Tdarr considers done using the paginated client/files
-        endpoint. Fetches in pages of 500 — much faster than getAll.
+        Fetch all files Tdarr considers done using the paginated status-tables
+        endpoint. Uses streaming to handle large response bodies (~14 KB/item).
         """
         all_files: list[dict] = []
+        import json as _json
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=240), headers=self._headers) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=300), headers=self._headers) as client:
             start = 0
             while True:
-                resp = await client.post(
+                async with client.stream(
+                    "POST",
                     f"{self._base}/api/v2/client/status-tables",
                     json={
                         "data": {
@@ -88,16 +90,19 @@ class TdarrClient:
                             },
                         }
                     },
-                )
-                if not resp.is_success:
-                    raise RuntimeError(
-                        f"Tdarr client/files failed {resp.status_code}: {resp.text[:300]}"
-                    )
-                data = resp.json()
+                ) as resp:
+                    if not resp.is_success:
+                        body = (await resp.aread()).decode()
+                        raise RuntimeError(
+                            f"Tdarr status-tables failed {resp.status_code}: {body[:300]}"
+                        )
+                    chunks = []
+                    async for chunk in resp.aiter_bytes():
+                        chunks.append(chunk)
+                    data = _json.loads(b"".join(chunks))
 
-                # Response format: { files: [...], totalCount: N } or just [...]
                 if isinstance(data, dict):
-                    files = data.get("files") or data.get("array") or []
+                    files = data.get("array") or data.get("files") or []
                     total = data.get("totalCount", 0)
                 elif isinstance(data, list):
                     files = data
@@ -106,6 +111,7 @@ class TdarrClient:
                     break
 
                 all_files.extend(f for f in files if isinstance(f, dict))
+                logger.info("Tdarr page start=%d: got %d files, totalCount=%d", start, len(files), total)
 
                 start += _PAGE_SIZE
                 if start >= total or not files:
