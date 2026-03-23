@@ -34,8 +34,8 @@ jobs:
           tags: |
             coooolkpk/frostbite:latest
             coooolkpk/frostbite:${{ steps.tag.outputs.tag }}
-          cache-from: type=registry,ref=coooolkpk/frostbite:latest
-          cache-to: type=inline
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # ── Update k8s manifest in homelab repo ──────────────────────────────────
       - name: Checkout kubernetes-homelab repo
