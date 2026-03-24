@@ -168,7 +168,7 @@ class PlaybackEventIn(BaseModel):
                 payload.get("ItemId")
                 or item.get("Id")
                 or ""
-            ),
+            ).replace("-", ""),
             user_id=(
                 payload.get("UserId")
                 or session.get("UserId")

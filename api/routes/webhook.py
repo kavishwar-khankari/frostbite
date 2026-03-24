@@ -48,8 +48,14 @@ async def receive_jellyfin_webhook(request: Request) -> dict:
         event = PlaybackEventIn.from_webhook(payload)
         session_key = f"{event.user_id}:{event.jellyfin_id}"
         now = time.monotonic()
+        last = _last_progress.get(session_key, 0)
 
-        if now - _last_progress.get(session_key, 0) >= _PROGRESS_INTERVAL_S:
+        if last == 0:
+            # First progress event for this session — treat as PlaybackStart
+            # since Jellyfin doesn't always send Start reliably.
+            _last_progress[session_key] = now
+            await on_playback_start(event)
+        elif now - last >= _PROGRESS_INTERVAL_S:
             _last_progress[session_key] = now
             await on_playback_progress(event)
 
