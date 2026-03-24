@@ -54,7 +54,11 @@ async def receive_jellyfin_webhook(request: Request) -> dict:
             # First progress event for this session — treat as PlaybackStart
             # since Jellyfin doesn't always send Start reliably.
             _last_progress[session_key] = now
-            await on_playback_start(event)
+            logger.info("First progress for session %s — triggering prefetch", session_key)
+            try:
+                await on_playback_start(event)
+            except Exception as exc:
+                logger.error("Prefetch trigger failed for %s: %s", event.jellyfin_id, exc, exc_info=True)
         elif now - last >= _PROGRESS_INTERVAL_S:
             _last_progress[session_key] = now
             await on_playback_progress(event)
