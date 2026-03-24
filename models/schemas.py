@@ -100,7 +100,6 @@ class TransferPage(BaseModel):
 
 class ManualTransferRequest(BaseModel):
     jellyfin_id: str
-    direction: str  # 'freeze' or 'reheat'
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
