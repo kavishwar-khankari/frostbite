@@ -345,6 +345,14 @@ async def _poll_transfer(db: AsyncSession, transfer: Transfer) -> None:
             transfer.error_message = job_status["error"]
             logger.error("Transfer %s failed: %s", transfer.id, transfer.error_message)
         else:
+            # Verify the file actually arrived before marking complete.
+            if transfer.direction == "reheat":
+                nas_path = os.path.join(settings.nas_root, transfer.dest_path)
+                if not os.path.isfile(nas_path):
+                    transfer.status = "failed"
+                    transfer.error_message = "rclone reported success but file not found on NAS"
+                    logger.error("Reheat %s: file missing on NAS after rclone success: %s", transfer.id, nas_path)
+                    return
             transfer.status = "completed"
             transfer.completed_at = datetime.utcnow()
             await _on_transfer_complete(db, transfer)
