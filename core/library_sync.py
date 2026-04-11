@@ -130,11 +130,12 @@ async def run_library_sync() -> dict:
     """
     Sync Jellyfin catalogue → DB. No filesystem walk — NAS existence
     check per item is fast (local disk, no FUSE/cloud traversal).
-    Returns {"total": N, "new": N, "updated": N}.
+    Returns {"total": N, "new": N, "updated": N, "removed": N}.
     """
     path_map = await _fetch_path_map()
-    stats = {"total": 0, "new": 0, "updated": 0}
+    stats = {"total": 0, "new": 0, "updated": 0, "removed": 0}
     items = list(path_map.values())
+    seen_jellyfin_ids = {c["jellyfin_id"] for c in items}
     logger.info("Library sync: upserting %d items...", len(items))
 
     async with async_session_factory() as db:
@@ -213,8 +214,30 @@ async def run_library_sync() -> dict:
 
         await db.commit()
 
+        # --- Orphan cleanup: remove items Jellyfin no longer reports ---
+        if seen_jellyfin_ids:
+            all_db_ids_result = await db.execute(
+                select(MediaItem.jellyfin_id)
+            )
+            all_db_ids = {row[0] for row in all_db_ids_result.all()}
+            orphan_ids = all_db_ids - seen_jellyfin_ids
+
+            if orphan_ids:
+                logger.info(
+                    "Library sync: removing %d orphaned items no longer in Jellyfin",
+                    len(orphan_ids),
+                )
+                orphan_result = await db.execute(
+                    select(MediaItem).where(MediaItem.jellyfin_id.in_(orphan_ids))
+                )
+                for orphan in orphan_result.scalars():
+                    logger.debug("Removing orphan: %s — %s", orphan.title, orphan.file_path)
+                    await db.delete(orphan)
+                    stats["removed"] += 1
+                await db.commit()
+
     logger.info(
-        "Library sync complete: %d total, %d new, %d updated",
-        stats["total"], stats["new"], stats["updated"],
+        "Library sync complete: %d total, %d new, %d updated, %d removed",
+        stats["total"], stats["new"], stats["updated"], stats["removed"],
     )
     return stats

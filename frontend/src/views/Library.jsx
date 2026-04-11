@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature, getScoreBreakdown, freezeSeries, reheatSeries } from '../api/client'
 import TierBadge from '../components/TierBadge'
@@ -16,9 +17,14 @@ const FACTOR_ORDER = [
   { key: 'size_penalty',     label: 'Size penalty',    max:  0 },
 ]
 
+const TOOLTIP_W = 224  // w-56 = 14rem = 224px
+const TOOLTIP_GAP = 6
+
 function ScoreBreakdownTooltip({ jellyfin_id, temperature }) {
   const [visible, setVisible] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
   const timerRef = useRef(null)
+  const anchorRef = useRef(null)
 
   const { data, isFetching } = useQuery({
     queryKey: ['score-breakdown', jellyfin_id],
@@ -27,14 +33,29 @@ function ScoreBreakdownTooltip({ jellyfin_id, temperature }) {
     staleTime: 60_000,
   })
 
+  useEffect(() => {
+    if (!visible || !anchorRef.current) return
+    const rect = anchorRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    const tooltipH = 260 // approximate height
+    const flipUp = spaceBelow < tooltipH + TOOLTIP_GAP
+    setPos({
+      top: flipUp ? rect.top - tooltipH - TOOLTIP_GAP + window.scrollY : rect.bottom + TOOLTIP_GAP + window.scrollY,
+      left: Math.min(rect.left + window.scrollX, window.innerWidth - TOOLTIP_W - 16),
+    })
+  }, [visible])
+
   const show = () => { timerRef.current = setTimeout(() => setVisible(true), 200) }
   const hide = () => { clearTimeout(timerRef.current); setVisible(false) }
 
   return (
-    <div className="relative inline-block w-full" onMouseEnter={show} onMouseLeave={hide}>
+    <div ref={anchorRef} className="inline-block w-full" onMouseEnter={show} onMouseLeave={hide}>
       <TemperatureBar value={temperature} />
-      {visible && (
-        <div className="absolute z-50 left-0 top-full mt-1 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 text-xs">
+      {visible && createPortal(
+        <div
+          className="fixed w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 text-xs"
+          style={{ top: pos.top, left: pos.left, zIndex: 9999, position: 'absolute' }}
+        >
           <div className="text-gray-400 font-medium mb-2">Score breakdown</div>
           {isFetching || !data ? (
             <div className="text-gray-600">Loading…</div>
@@ -66,7 +87,8 @@ function ScoreBreakdownTooltip({ jellyfin_id, temperature }) {
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
