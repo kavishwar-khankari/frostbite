@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '*.md'
+      - 'README.md'
+      - 'CLAUDE.md'
+      - 'LICENSE'
+      - '.github/**'
+      - '.gitignore'
+      - 'docs/**'
 
 jobs:
   build-and-push:
