@@ -246,17 +246,25 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
         src_fs = f"{settings.nas_root}/"
         dst_fs = f"{settings.rclone_remote}:"
         nas_path = os.path.join(settings.nas_root, rel_path)
+
+        # Check if cloud already has a valid copy (e.g. reheated file whose
+        # cloud copy was never deleted). Skip the upload and just delete NAS.
+        already_on_cloud = await _verify_cloud_copy(rel_path, item.file_size_bytes)
+        if already_on_cloud:
+            if os.path.isfile(nas_path):
+                deleted = await _delete_nas_copy(rel_path)
+                if not deleted:
+                    logger.warning("Cloud copy verified for %s but could not delete NAS copy", item.title)
+            transfer.status = "completed"
+            transfer.completed_at = datetime.utcnow()
+            transfer.error_message = "Already on cloud — skipped upload"
+            item.storage_tier = "cold"
+            item.transfer_direction = None
+            logger.info("Transfer %s: %s already on cloud, skipped re-upload", transfer.id, item.title)
+            await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title})
+            return
+
         if not os.path.isfile(nas_path):
-            # File not on NAS — check if it already exists on the cloud
-            # (e.g. manually transferred before Frostbite was set up).
-            already_cold = await _verify_cloud_copy(rel_path, item.file_size_bytes)
-            if already_cold:
-                transfer.status = "cancelled"
-                transfer.error_message = "Already on cloud — skipped"
-                item.storage_tier = "cold"
-                item.transfer_direction = None
-                logger.info("Transfer %s: %s already on cloud, marking cold", transfer.id, item.title)
-                return
             transfer.status = "failed"
             transfer.error_message = f"Source file not found on NAS: {nas_path}"
             logger.error("Transfer %s: file missing on NAS: %s", transfer.id, nas_path)
