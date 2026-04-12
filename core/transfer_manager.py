@@ -247,9 +247,10 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
         dst_fs = f"{settings.rclone_remote}:"
         nas_path = os.path.join(settings.nas_root, rel_path)
 
-        # Check if cloud already has a valid copy (e.g. reheated file whose
-        # cloud copy was never deleted). Skip the upload and just delete NAS.
-        already_on_cloud = await _verify_cloud_copy(rel_path, item.file_size_bytes)
+        # Quick single-shot check: does cloud already have a valid copy?
+        # (e.g. reheated file whose cloud copy was never deleted)
+        # No retries — this is a pre-flight optimisation, not post-upload verification.
+        already_on_cloud = await _quick_cloud_check(rel_path, item.file_size_bytes)
         if already_on_cloud:
             if os.path.isfile(nas_path):
                 deleted = await _delete_nas_copy(rel_path)
@@ -433,6 +434,28 @@ async def _resolve_orphaned_transfer(db: AsyncSession, transfer: Transfer) -> No
     item.transfer_direction = None
     logger.info("Orphan %s: %s re-queued", transfer.id, item.title)
     await broadcast({"type": "transfer_failed", "transfer_id": str(transfer.id), "title": item.title, "reason": "orphan_requeued"})
+
+
+async def _quick_cloud_check(file_path: str, expected_size: int) -> bool:
+    """Single-shot stat to check if cloud already has this file.
+    Used as a pre-flight optimisation — no retries, no backoff."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(f"{settings.rclone_rc_url}/operations/stat", json={
+                "fs": f"{settings.rclone_remote}:",
+                "remote": file_path,
+            })
+            if resp.status_code != 200:
+                return False
+            item = resp.json().get("item")
+            if item is None:
+                return False
+            remote_size = item.get("Size", -1)
+            if expected_size > 0 and remote_size != expected_size:
+                return False
+            return True
+    except Exception:
+        return False
 
 
 async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
