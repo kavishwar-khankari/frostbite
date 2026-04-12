@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select, text
@@ -181,7 +181,10 @@ async def scoring_sweep() -> None:
             if existing:
                 continue
 
-            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked:
+            # Don't auto-freeze items that were recently prefetched — give the user
+            # time to actually watch them before the scorer freezes them back.
+            prefetch_grace = item.last_prefetch_at and item.last_prefetch_at > datetime.utcnow() - timedelta(hours=settings.prefetch_grace_hours)
+            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked and not prefetch_grace:
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
                 pending_by_item[item.id] = [True]  # sentinel — prevents double-queue
                 queued_freeze += 1

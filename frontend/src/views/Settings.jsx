@@ -23,6 +23,11 @@ const SETTING_META = {
     desc: 'Days to wait before an episode can receive another prefetch boost. Prevents repeated plays from inflating temperature.',
     min: 1, max: 30, step: 1, unit: ' days',
   },
+  prefetch_grace_hours: {
+    label: 'Prefetch Grace Period',
+    desc: 'Hours after a prefetch during which auto-score will not re-freeze the episode. Prevents ping-pong between prefetch reheat and auto-freeze.',
+    min: 1, max: 72, step: 1, unit: ' hrs',
+  },
   freeze_window_start: {
     label: 'Freeze Window Start',
     desc: 'Hour of day (local time) when freeze transfers may begin (0–23).',
