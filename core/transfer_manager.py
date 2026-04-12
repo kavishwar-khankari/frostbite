@@ -233,7 +233,15 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
         logger.error("Blocked transfer %s: not a media file (%s)", transfer.id, rel_path)
         return
 
-    # ── Pre-flight guard 2: source file must exist ────────────────────────────
+    # ── Pre-flight guard 2: filename length (OpenDrive silently drops long names)
+    filename = os.path.basename(rel_path)
+    if transfer.direction == "freeze" and len(filename) > 120:
+        transfer.status = "failed"
+        transfer.error_message = f"Filename too long for cloud storage ({len(filename)} chars, limit ~140). Rename the file and retry."
+        logger.error("Blocked transfer %s: filename too long (%d chars): %s", transfer.id, len(filename), filename)
+        return
+
+    # ── Pre-flight guard 3: source file must exist ────────────────────────────
     if transfer.direction == "freeze":
         src_fs = f"{settings.nas_root}/"
         dst_fs = f"{settings.rclone_remote}:"
@@ -423,10 +431,10 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
     """
     Confirm the file exists on the cloud remote and its size matches.
     Uses rclone RC operations/stat against the transfer daemon (5572).
-    Retries up to 3 times with exponential backoff to handle slow cloud
-    API propagation and rate limiting (common with OpenDrive).
+    Retries up to 5 times with increasing backoff (10s, 20s, 30s, 40s)
+    to handle OpenDrive's eventual consistency / slow API propagation.
     """
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -440,7 +448,7 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
                         attempt + 1, max_retries, file_path, resp.status_code,
                     )
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(5 * (attempt + 1))
+                        await asyncio.sleep(10 * (attempt + 1))
                         continue
                     return False
                 stat = resp.json()
@@ -451,7 +459,7 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
                         attempt + 1, max_retries, file_path,
                     )
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(5 * (attempt + 1))
+                        await asyncio.sleep(10 * (attempt + 1))
                         continue
                     return False
                 remote_size = item.get("Size", -1)
@@ -467,7 +475,7 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
                 attempt + 1, max_retries, file_path, exc,
             )
             if attempt < max_retries - 1:
-                await asyncio.sleep(5 * (attempt + 1))
+                await asyncio.sleep(10 * (attempt + 1))
     return False
 
 
@@ -498,11 +506,16 @@ async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
         # Verify the cloud copy exists and size matches before deleting from NAS
         verified = await _verify_cloud_copy(transfer.dest_path, item.file_size_bytes)
         if not verified:
+            filename = os.path.basename(transfer.dest_path)
+            if len(filename) > 120:
+                error_msg = f"Cloud upload silently failed — filename too long ({len(filename)} chars, limit ~140). Rename the file and retry."
+            else:
+                error_msg = "Cloud verification failed — NAS copy retained"
             transfer.status = "failed"
-            transfer.error_message = "Cloud verification failed — NAS copy retained"
+            transfer.error_message = error_msg
             item.storage_tier = "hot"
             item.transfer_direction = None
-            logger.error("Freeze verification failed for %s — NAS copy kept", item.title)
+            logger.error("Freeze verification failed for %s — NAS copy kept (%s)", item.title, error_msg)
             await broadcast({
                 "type": "transfer_failed",
                 "transfer_id": str(transfer.id),

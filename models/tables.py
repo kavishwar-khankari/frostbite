@@ -38,6 +38,7 @@ class MediaItem(Base):
     # Storage state
     storage_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="hot")
     transfer_direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    upload_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Scoring
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)

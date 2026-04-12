@@ -181,7 +181,7 @@ async def scoring_sweep() -> None:
             if existing:
                 continue
 
-            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold:
+            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked:
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
                 pending_by_item[item.id] = [True]  # sentinel — prevents double-queue
                 queued_freeze += 1
@@ -205,7 +205,7 @@ async def check_nas_space() -> None:
         async with async_session_factory() as db:
             result = await db.execute(
                 select(MediaItem)
-                .where(MediaItem.storage_tier == "hot")
+                .where(MediaItem.storage_tier == "hot", MediaItem.upload_blocked == False)
                 .order_by(MediaItem.temperature.asc())
                 .limit(10)
             )
@@ -215,7 +215,8 @@ async def check_nas_space() -> None:
 
 
 async def cleanup_stale_transfers() -> None:
-    """Mark transfers that have been active for >2 hours as failed."""
+    """Mark transfers that have been active for >2 hours as failed,
+    and cancel queued freezes whose filenames are too long for cloud storage."""
     from datetime import timedelta
     cutoff = datetime.utcnow() - timedelta(hours=2)
     async with async_session_factory() as db:
@@ -234,6 +235,24 @@ async def cleanup_stale_transfers() -> None:
                 item.transfer_direction = None
         if stale:
             logger.warning("Cleaned up %d stale transfers", len(stale))
+
+        # Cancel queued freezes for upload-blocked items (filename too long)
+        blocked_result = await db.execute(
+            select(Transfer)
+            .join(MediaItem, Transfer.media_item_id == MediaItem.id)
+            .where(
+                Transfer.status == "queued",
+                Transfer.direction == "freeze",
+                MediaItem.upload_blocked == True,
+            )
+        )
+        blocked = list(blocked_result.scalars())
+        for t in blocked:
+            t.status = "cancelled"
+            t.error_message = "Filename too long for cloud storage"
+        if blocked:
+            logger.info("Cancelled %d queued freezes for upload-blocked items", len(blocked))
+
         await db.commit()
 
 

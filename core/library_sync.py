@@ -167,6 +167,9 @@ async def run_library_sync() -> dict:
             except ValueError:
                 tier = "hot"
 
+            # OpenDrive silently drops files with filenames > ~120 chars
+            blocked = len(os.path.basename(file_path)) > 120
+
             result = await db.execute(
                 select(MediaItem).where(MediaItem.jellyfin_id == compact["jellyfin_id"])
             )
@@ -183,6 +186,7 @@ async def run_library_sync() -> dict:
                 existing.codec = compact["codec"]
                 existing.resolution = compact["resolution"]
                 existing.storage_tier = tier
+                existing.upload_blocked = blocked
                 existing.community_rating = compact["community_rating"]
                 existing.premiere_date = compact["premiere_date"]
                 existing.updated_at = datetime.utcnow()
@@ -201,6 +205,7 @@ async def run_library_sync() -> dict:
                     codec=compact["codec"],
                     resolution=compact["resolution"],
                     storage_tier=tier,
+                    upload_blocked=blocked,
                     temperature=100.0,
                     date_added=compact["date_added"],
                     premiere_date=compact["premiere_date"],

@@ -76,6 +76,8 @@ async def _series_action(body: SeriesActionRequest, direction: str, db: DBSessio
         MediaItem.series_id == body.series_id,
         MediaItem.storage_tier == tier,
     )
+    if direction == "freeze":
+        q = q.where(MediaItem.upload_blocked == False)
     if body.season_number is not None:
         q = q.where(MediaItem.season_number == body.season_number)
     result = await db.execute(q)

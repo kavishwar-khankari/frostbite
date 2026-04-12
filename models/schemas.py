@@ -24,6 +24,7 @@ class MediaItemResponse(BaseModel):
     date_added: datetime | None
     tdarr_eligible: bool
     tdarr_status: str | None
+    upload_blocked: bool
 
     model_config = {"from_attributes": True}
 

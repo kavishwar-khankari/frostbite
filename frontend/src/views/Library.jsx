@@ -152,7 +152,12 @@ function ItemRow({ item, selected, onSelect }) {
         <div className="text-xs text-gray-600 truncate">{item.file_path}</div>
       </td>
       <td className="px-3 py-2.5 text-center">
-        <TierBadge tier={item.storage_tier} />
+        <div className="flex items-center justify-center gap-1.5">
+          <TierBadge tier={item.storage_tier} />
+          {item.upload_blocked && (
+            <span className="text-amber-400 text-xs" title="Filename too long for cloud storage — rename to enable freeze">⚠</span>
+          )}
+        </div>
       </td>
       <td className="px-3 py-2.5 w-32">
         {editTemp ? (
@@ -183,9 +188,12 @@ function ItemRow({ item, selected, onSelect }) {
       <td className="px-3 py-2.5 text-xs text-gray-500 text-right">{fmtDate(item.date_added)}</td>
       <td className="px-3 py-2.5 text-right w-20">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {item.storage_tier === 'hot' && (
+          {item.storage_tier === 'hot' && !item.upload_blocked && (
             <button className="btn bg-frost-900/40 hover:bg-frost-800/60 text-frost-300 text-xs py-0.5 px-2"
               onClick={() => freeze.mutate()} disabled={freeze.isPending}>Freeze</button>
+          )}
+          {item.storage_tier === 'hot' && item.upload_blocked && (
+            <span className="text-xs text-amber-500/70" title="Rename file to enable freeze">name too long</span>
           )}
           {item.storage_tier === 'cold' && (
             <button className="btn bg-orange-900/40 hover:bg-orange-800/60 text-orange-300 text-xs py-0.5 px-2"
