@@ -108,13 +108,15 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
         .order_by(MediaItem.episode_number)
     )
     for i, ep in enumerate(result.scalars()):
-        # Skip if this episode was already prefetched recently
-        if ep.last_prefetch_at and ep.last_prefetch_at > cooldown_cutoff:
-            continue
-        await _boost_temperature(db, ep, settings.prefetch_boost)
-        ep.last_prefetch_at = now
+        recently_prefetched = ep.last_prefetch_at and ep.last_prefetch_at > cooldown_cutoff
+        # Always reheat cold episodes — cooldown only gates the temp boost
+        # (prevents ping-pong on episodes that stay hot after prefetch)
+        if not recently_prefetched:
+            await _boost_temperature(db, ep, settings.prefetch_boost)
+            ep.last_prefetch_at = now
         if ep.storage_tier == "cold":
             priority = 90 - (i * 10)
+            ep.last_prefetch_at = now
             await queue_transfer(db, ep.id, direction="reheat", trigger="prefetch", priority=priority)
 
     # Season boundary look-ahead
@@ -184,6 +186,36 @@ async def on_playback_progress(event: PlaybackEventIn) -> None:
         if not item:
             return
         await _record_event(db, item, event)
+
+        # Progress-as-Start fallback: native clients (Findroid, Swiftfin, etc.)
+        # often don't send PlaybackStart webhooks at all — only Progress ticks.
+        # If we haven't seen a real start event in the last 30 minutes for this
+        # item, treat this progress as a start and trigger prefetch.
+        if item.item_type == "episode":
+            recent_start = await db.execute(
+                select(PlaybackEvent)
+                .where(
+                    PlaybackEvent.media_item_id == item.id,
+                    PlaybackEvent.event_type == "start",
+                    PlaybackEvent.created_at > datetime.utcnow() - timedelta(minutes=30),
+                )
+                .limit(1)
+            )
+            if not recent_start.scalar_one_or_none():
+                logger.info("Progress-as-Start fallback for %s (no recent start event)", item.title)
+                # Record a synthetic start so subsequent progress ticks don't re-trigger
+                db.add(PlaybackEvent(
+                    media_item_id=item.id,
+                    user_id=event.user_id or "",
+                    username=event.username,
+                    event_type="start",
+                    play_method=event.play_method,
+                    client_name=event.client_name,
+                    device_name=event.device_name,
+                ))
+                await _boost_temperature(db, item, 30.0)
+                await _prefetch_next_episodes(db, item)
+
         await db.commit()
 
 
