@@ -423,26 +423,52 @@ async def _verify_cloud_copy(file_path: str, expected_size: int) -> bool:
     """
     Confirm the file exists on the cloud remote and its size matches.
     Uses rclone RC operations/stat against the transfer daemon (5572).
+    Retries up to 3 times with exponential backoff to handle slow cloud
+    API propagation and rate limiting (common with OpenDrive).
     """
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(f"{settings.rclone_rc_url}/operations/stat", json={
-                "fs": f"{settings.rclone_remote}:",
-                "remote": file_path,
-            })
-            if resp.status_code != 200:
-                return False
-            stat = resp.json()
-            remote_size = stat.get("item", {}).get("Size", -1)
-            if expected_size > 0 and remote_size != expected_size:
-                logger.warning(
-                    "Size mismatch for %s: NAS=%d cloud=%d", file_path, expected_size, remote_size
-                )
-                return False
-            return True
-    except Exception as exc:
-        logger.warning("Cloud verification failed for %s: %s", file_path, exc)
-        return False
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{settings.rclone_rc_url}/operations/stat", json={
+                    "fs": f"{settings.rclone_remote}:",
+                    "remote": file_path,
+                })
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Cloud verify attempt %d/%d for %s: HTTP %d",
+                        attempt + 1, max_retries, file_path, resp.status_code,
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    return False
+                stat = resp.json()
+                item = stat.get("item")
+                if item is None:
+                    logger.warning(
+                        "Cloud verify attempt %d/%d for %s: file not found on remote",
+                        attempt + 1, max_retries, file_path,
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    return False
+                remote_size = item.get("Size", -1)
+                if expected_size > 0 and remote_size != expected_size:
+                    logger.warning(
+                        "Size mismatch for %s: NAS=%d cloud=%d", file_path, expected_size, remote_size
+                    )
+                    return False
+                return True
+        except Exception as exc:
+            logger.warning(
+                "Cloud verify attempt %d/%d for %s: %s",
+                attempt + 1, max_retries, file_path, exc,
+            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+    return False
 
 
 async def _delete_nas_copy(file_path: str) -> bool:
