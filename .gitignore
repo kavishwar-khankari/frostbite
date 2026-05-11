@@ -36,4 +36,5 @@ graphify-out/cache/
 # temp build artifacts
 graphify-out/.graphify_*
 graphify-out/.graphify_python
+graphify-out/.rebuild.lock
 graphify-out/.needs_update
