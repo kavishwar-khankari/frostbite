@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+## Web search
+
+Always delegate web searches to the `websearch` subagent via the Task tool. Example: "search the web for X and return the results". The `websearch` subagent uses SearXNG tools — this avoids the built-in WebSearch/WebFetch cost. Never use `WebSearch` or `WebFetch` directly; use `Task(subagent_type="websearch", ...)` instead.
+
+## Reading Reddit threads
+
+The new Reddit UI (`www.reddit.com`) blocks direct fetch with a verification wall. Use either of these instead:
+- **JSON API**: append `.json` to the URL (e.g. `https://www.reddit.com/r/subreddit/comments/.../.json`) — use `searxng_web_url_read` with `maxLength` or `paragraphRange`.
+- **Old Reddit**: replace `www.reddit.com` with `old.reddit.com` — use `searxng_web_url_read`.
+
+## Incidents
+
+Frostbite-specific operational incidents are tracked in `incidents/`. Read `incidents/README.md` first, then the relevant incident file.
+
+When you solve a Frostbite incident:
+1. Create `incidents/<NNN>-<slug>.md` using the next available number (check `incidents/README.md` for the last used).
+2. Follow this structure: Date, Symptoms, Affected, Root Cause, Fix Steps, Prevention.
+3. If the incident is a recurrence of a previous one, update the existing file instead of creating a new one.
+4. Append a row to the index table in `incidents/README.md`.
+
+---
+
 ## Project: Frostbite — Intelligent Tiered Storage Engine for Jellyfin
 
 ### What this is
