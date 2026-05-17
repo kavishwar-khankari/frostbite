@@ -58,153 +58,153 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L1",
-      "id": "agents_md",
       "community": 7,
-      "norm_label": "agents.md"
+      "norm_label": "agents.md",
+      "id": "agents_md"
     },
     {
       "label": "AGENTS.md \u2014 Frostbite",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L1",
-      "id": "frostbite_agents_agents_md_frostbite",
       "community": 7,
-      "norm_label": "agents.md \u2014 frostbite"
+      "norm_label": "agents.md \u2014 frostbite",
+      "id": "frostbite_agents_agents_md_frostbite"
     },
     {
       "label": "Quick reference",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L3",
-      "id": "frostbite_agents_quick_reference",
       "community": 7,
-      "norm_label": "quick reference"
+      "norm_label": "quick reference",
+      "id": "frostbite_agents_quick_reference"
     },
     {
       "label": "Architecture",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L10",
-      "id": "frostbite_agents_architecture",
       "community": 7,
-      "norm_label": "architecture"
+      "norm_label": "architecture",
+      "id": "frostbite_agents_architecture"
     },
     {
       "label": "code:block1 (api/main.py          \u2192 FastAPI app, lifespan manages singlet)",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L11",
-      "id": "frostbite_agents_codeblock_1",
       "community": 7,
-      "norm_label": "code:block1 (api/main.py          \u2192 fastapi app, lifespan manages singlet)"
+      "norm_label": "code:block1 (api/main.py          \u2192 fastapi app, lifespan manages singlet)",
+      "id": "frostbite_agents_codeblock_1"
     },
     {
       "label": "Settings quirks",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L22",
-      "id": "frostbite_agents_settings_quirks",
       "community": 7,
-      "norm_label": "settings quirks"
+      "norm_label": "settings quirks",
+      "id": "frostbite_agents_settings_quirks"
     },
     {
       "label": "Route registration order is critical",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L26",
-      "id": "frostbite_agents_route_registration_order_is_critical",
       "community": 7,
-      "norm_label": "route registration order is critical"
+      "norm_label": "route registration order is critical",
+      "id": "frostbite_agents_route_registration_order_is_critical"
     },
     {
       "label": "code:python (app.include_router(controls.router, prefix=\"/api\")   # befor)",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L28",
-      "id": "frostbite_agents_codeblock_2",
       "community": 7,
-      "norm_label": "code:python (app.include_router(controls.router, prefix=\"/api\")   # befor)"
+      "norm_label": "code:python (app.include_router(controls.router, prefix=\"/api\")   # befor)",
+      "id": "frostbite_agents_codeblock_2"
     },
     {
       "label": "Item ID format quirk",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L34",
-      "id": "frostbite_agents_item_id_format_quirk",
       "community": 7,
-      "norm_label": "item id format quirk"
+      "norm_label": "item id format quirk",
+      "id": "frostbite_agents_item_id_format_quirk"
     },
     {
       "label": "code:python (normalized_id = event.jellyfin_id.replace(\"-\", \"\"))",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L36",
-      "id": "frostbite_agents_codeblock_3",
       "community": 7,
-      "norm_label": "code:python (normalized_id = event.jellyfin_id.replace(\"-\", \"\"))"
+      "norm_label": "code:python (normalized_id = event.jellyfin_id.replace(\"-\", \"\"))",
+      "id": "frostbite_agents_codeblock_3"
     },
     {
       "label": "Tdarr gate",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L40",
-      "id": "frostbite_agents_tdarr_gate",
       "community": 7,
-      "norm_label": "tdarr gate"
+      "norm_label": "tdarr gate",
+      "id": "frostbite_agents_tdarr_gate"
     },
     {
       "label": "Transfer semantics",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L45",
-      "id": "frostbite_agents_transfer_semantics",
       "community": 7,
-      "norm_label": "transfer semantics"
+      "norm_label": "transfer semantics",
+      "id": "frostbite_agents_transfer_semantics"
     },
     {
       "label": "No test/lint framework",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L51",
-      "id": "frostbite_agents_no_test_lint_framework",
       "community": 7,
-      "norm_label": "no test/lint framework"
+      "norm_label": "no test/lint framework",
+      "id": "frostbite_agents_no_test_lint_framework"
     },
     {
       "label": "Dependencies",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L54",
-      "id": "frostbite_agents_dependencies",
       "community": 7,
-      "norm_label": "dependencies"
+      "norm_label": "dependencies",
+      "id": "frostbite_agents_dependencies"
     },
     {
       "label": "graphify",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L59",
-      "id": "frostbite_agents_graphify",
       "community": 7,
-      "norm_label": "graphify"
+      "norm_label": "graphify",
+      "id": "frostbite_agents_graphify"
     },
     {
       "label": "Web search",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L69",
-      "id": "frostbite_agents_web_search",
       "community": 7,
-      "norm_label": "web search"
+      "norm_label": "web search",
+      "id": "frostbite_agents_web_search"
     },
     {
       "label": "Reading Reddit threads",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L73",
-      "id": "frostbite_agents_reading_reddit_threads",
       "community": 7,
-      "norm_label": "reading reddit threads"
+      "norm_label": "reading reddit threads",
+      "id": "frostbite_agents_reading_reddit_threads"
     },
     {
       "label": "config.py",
@@ -3858,9 +3858,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agents_md",
-      "target": "frostbite_agents_agents_md_frostbite",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_agents_md_frostbite"
     },
     {
       "relation": "contains",
@@ -3868,9 +3868,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_quick_reference",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_quick_reference"
     },
     {
       "relation": "contains",
@@ -3878,9 +3878,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_architecture",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_architecture"
     },
     {
       "relation": "contains",
@@ -3888,9 +3888,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L22",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_settings_quirks",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_settings_quirks"
     },
     {
       "relation": "contains",
@@ -3898,9 +3898,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L26",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_route_registration_order_is_critical",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_route_registration_order_is_critical"
     },
     {
       "relation": "contains",
@@ -3908,9 +3908,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L34",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_item_id_format_quirk",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_item_id_format_quirk"
     },
     {
       "relation": "contains",
@@ -3918,9 +3918,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_tdarr_gate",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_tdarr_gate"
     },
     {
       "relation": "contains",
@@ -3928,9 +3928,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L45",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_transfer_semantics",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_transfer_semantics"
     },
     {
       "relation": "contains",
@@ -3938,9 +3938,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L51",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_no_test_lint_framework",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_no_test_lint_framework"
     },
     {
       "relation": "contains",
@@ -3948,9 +3948,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L54",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_dependencies",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_dependencies"
     },
     {
       "relation": "contains",
@@ -3958,9 +3958,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L59",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_graphify",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_graphify"
     },
     {
       "relation": "contains",
@@ -3968,9 +3968,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L69",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_web_search",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_web_search"
     },
     {
       "relation": "contains",
@@ -3978,9 +3978,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L73",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_agents_md_frostbite",
-      "target": "frostbite_agents_reading_reddit_threads",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_reading_reddit_threads"
     },
     {
       "relation": "contains",
@@ -3988,9 +3988,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_architecture",
-      "target": "frostbite_agents_codeblock_1",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_codeblock_1"
     },
     {
       "relation": "contains",
@@ -3998,9 +3998,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_route_registration_order_is_critical",
-      "target": "frostbite_agents_codeblock_2",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_codeblock_2"
     },
     {
       "relation": "contains",
@@ -4008,9 +4008,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L36",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frostbite_agents_item_id_format_quirk",
-      "target": "frostbite_agents_codeblock_3",
-      "confidence_score": 1.0
+      "target": "frostbite_agents_codeblock_3"
     },
     {
       "relation": "contains",
@@ -10476,5 +10476,5 @@
       "source_file": "docs/teapot-architecture.md"
     }
   ],
-  "built_at_commit": "6e1cfff20f7d75dfab80108b1ef36db69d8c3624"
+  "built_at_commit": "fe7b0ff0a54fc2b84c51e5e03cdef522218522db"
 }
