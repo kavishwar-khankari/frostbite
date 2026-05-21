@@ -26,14 +26,5 @@ frontend/package-lock.json
 # OpenCode local config
 .opencode/
 
-# graphify — commit graph outputs, skip local-only files
-# manifest.json is mtime-based, invalid after git clone
-graphify-out/manifest.json
-# cost.json is local token tracking
-graphify-out/cost.json
-# extraction cache, rebuild per machine
-graphify-out/cache/
-# temp build artifacts
-graphify-out/.graphify_*
-graphify-out/.graphify_python
-graphify-out/.needs_update
+# graphify — regenerated locally, not version-controlled
+graphify-out/
