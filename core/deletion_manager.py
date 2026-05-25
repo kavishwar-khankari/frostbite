@@ -237,15 +237,13 @@ async def scan_deletion_candidates(db: AsyncSession | None = None) -> dict:
             new_candidates.append(candidate)
             created += 1
 
-        if own_db:
-            await db.commit()
+        await db.commit()
 
         # ── Send notification for new candidates ──────────────────────────
         if new_candidates:
             try:
                 await _send_deletion_notification(new_candidates)
-                if own_db:
-                    await db.commit()
+                await db.commit()
                 notified = len(new_candidates)
             except Exception:
                 logger.exception("Failed to send deletion notification")

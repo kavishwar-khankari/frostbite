@@ -180,7 +180,23 @@ async def add_bulk_item_exceptions(body: BulkItemExceptionRequest, db: DBSession
 
 @router.post("/deletion/exceptions/series", response_model=DeletionExceptionResponse)
 async def add_series_exception(body: SeriesExceptionRequest, db: DBSession) -> DeletionExceptionResponse:
-    exc = await protect_series(series_id=body.series_id, db=db, title=body.series_id, reason=body.reason)
+    from models.tables import MediaItem
+
+    series_name = body.series_id
+    try:
+        name_result = await db.execute(
+            select(MediaItem.series_name).where(
+                MediaItem.series_id == body.series_id,
+                MediaItem.series_name.isnot(None),
+            ).limit(1)
+        )
+        name = name_result.scalar_one_or_none()
+        if name:
+            series_name = name
+    except Exception:
+        pass
+
+    exc = await protect_series(series_id=body.series_id, db=db, title=series_name, reason=body.reason)
     await db.commit()
     await db.refresh(exc)
 
