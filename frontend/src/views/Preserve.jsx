@@ -147,6 +147,8 @@ export default function Preserve() {
   const [page, setPage] = useState(0)
   const [excPage, setExcPage] = useState(0)
   const [viewMode, setViewMode] = useState('grouped')
+  const [groupSort, setGroupSort] = useState('count')
+  const [groupSortDir, setGroupSortDir] = useState('desc')
   const LIMIT = viewMode === 'grouped' ? 2000 : 100
 
   const { data: stats } = useQuery({
@@ -251,11 +253,31 @@ export default function Preserve() {
         standalone.push(c)
       }
     }
+
+    const resolveValue = (g) => {
+      const totalSize = g.candidates.reduce((s, c) => s + c.file_size_bytes, 0)
+      const avgTemp = g.candidates.reduce((s, c) => s + c.temperature, 0) / g.candidates.length
+      switch (groupSort) {
+        case 'count': return g.candidates.length
+        case 'name': return (g.seriesName || '').toLowerCase()
+        case 'temp': return avgTemp
+        case 'size': return totalSize
+        default: return g.candidates.length
+      }
+    }
+
+    const sortedGroups = Object.values(groups).sort((a, b) => {
+      const va = resolveValue(a)
+      const vb = resolveValue(b)
+      if (typeof va === 'string') return groupSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+      return groupSortDir === 'asc' ? va - vb : vb - va
+    })
+
     return {
-      seriesGroups: Object.values(groups).sort((a, b) => a.candidates.length - b.candidates.length),
+      seriesGroups: sortedGroups,
       standaloneItems: standalone,
     }
-  }, [candidates])
+  }, [candidates, groupSort, groupSortDir])
 
   return (
     <div className="p-6 space-y-6">
@@ -332,6 +354,27 @@ export default function Preserve() {
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(0) }}
           />
+          {viewMode === 'grouped' && (
+            <div className="flex items-center gap-2 ml-auto">
+              <select
+                className="select w-28 text-xs"
+                value={groupSort}
+                onChange={e => setGroupSort(e.target.value)}
+              >
+                <option value="count">Episodes</option>
+                <option value="name">Name</option>
+                <option value="temp">Avg Temp</option>
+                <option value="size">Size</option>
+              </select>
+              <button
+                className="btn-ghost text-xs px-2"
+                onClick={() => setGroupSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                title={groupSortDir === 'desc' ? 'Descending' : 'Ascending'}
+              >
+                {groupSortDir === 'desc' ? '↓' : '↑'}
+              </button>
+            </div>
+          )}
           <span className="text-xs text-gray-600">{candTotal.toLocaleString()} total</span>
         </div>
 
