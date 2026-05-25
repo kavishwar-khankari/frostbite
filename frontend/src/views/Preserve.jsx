@@ -72,7 +72,7 @@ function CandidateRow({ c, onApprove, onProtectItem, onProtectSeries, isMutating
   )
 }
 
-function SeriesGroup({ seriesId, seriesName, candidates, onApprove, onProtectItem, onProtectSeries, isMutating }) {
+function SeriesGroup({ seriesId, seriesName, candidates, onApprove, onProtectItem, onProtectSeries, onDeleteAll, isMutating }) {
   const [open, setOpen] = useState(false)
   const totalSize = candidates.reduce((s, c) => s + c.file_size_bytes, 0)
   const avgTemp = candidates.reduce((s, c) => s + c.temperature, 0) / candidates.length
@@ -94,6 +94,12 @@ function SeriesGroup({ seriesId, seriesName, candidates, onApprove, onProtectIte
           </div>
         </div>
         <div className="flex gap-1 pr-3 opacity-0 group-hover/series:opacity-100 transition-opacity shrink-0">
+          <button
+            className="btn bg-red-900/40 hover:bg-red-800/60 text-red-300 text-xs py-0.5 px-2"
+            onClick={e => { e.stopPropagation(); onDeleteAll() }}
+            disabled={isMutating}
+            title="Delete all candidates in this series from cloud storage"
+          >🗑 Delete all</button>
           <button
             className="btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 text-xs py-0.5 px-2"
             onClick={e => { e.stopPropagation(); onProtectSeries(candidates[0].id) }}
@@ -251,6 +257,14 @@ export default function Preserve() {
       `Delete "${c.title}" from cloud storage? This cannot be undone by Frostbite.`
     )) return
     approveMut.mutate(c.id)
+  }
+
+  const handleDeleteAll = (candidates) => {
+    const totalSize = candidates.reduce((s, c) => s + c.file_size_bytes, 0)
+    if (!window.confirm(
+      `Delete ${candidates.length} episodes from cloud storage? Total: ${fmtSize(totalSize)}. This cannot be undone by Frostbite.`
+    )) return
+    for (const c of candidates) approveMut.mutate(c.id)
   }
 
   const handleRemoveException = (e) => {
@@ -485,6 +499,7 @@ export default function Preserve() {
                 onApprove={handleApprove}
                 onProtectItem={protectItemMut.mutate}
                 onProtectSeries={protectSeriesMut.mutate}
+                onDeleteAll={() => handleDeleteAll(g.candidates)}
                 isMutating={isMutating}
               />
             ))}
