@@ -89,8 +89,8 @@ async def _invalidate_vfs(rel_path: str) -> None:
                     logger.warning("VFS invalidate failed for %s on %s: %s", rel_path, vfs_url, exc)
 
 
-async def _send_deletion_notification(candidates: list[DeletionCandidate]) -> None:
-    if not settings.deletion_notifications_enabled or not candidates:
+async def _send_deletion_notification(candidate_data: list[dict]) -> None:
+    if not settings.deletion_notifications_enabled or not candidate_data:
         return
 
     if not settings.apprise_config_key:
@@ -99,20 +99,20 @@ async def _send_deletion_notification(candidates: list[DeletionCandidate]) -> No
 
     url = f"{settings.apprise_url.rstrip('/')}/notify/{settings.apprise_config_key}"
 
-    top = candidates[:10]
-    lines = [f"{len(candidates)} cold media items are below deletion threshold {settings.deletion_threshold}."]
+    top = candidate_data[:10]
+    lines = [f"{len(candidate_data)} cold media items are below deletion threshold {settings.deletion_threshold}."]
     lines.append(f"Review them: {settings.frostbite_public_url.rstrip('/')}/preserve")
     lines.append("")
     lines.append("Top candidates:")
-    for c in top:
-        name = c.title
-        if c.season_number is not None and c.episode_number is not None:
-            name = f"{c.series_name or c.series_id} S{c.season_number:02d}E{c.episode_number:02d}"
-        size_gb = c.file_size_bytes / 1e9
-        lines.append(f"- {name} — temp {c.temperature} — {size_gb:.1f} GB")
+    for d in top:
+        name = d["title"]
+        if d.get("season_number") is not None and d.get("episode_number") is not None:
+            name = f"{d['series_name'] or d['series_id']} S{d['season_number']:02d}E{d['episode_number']:02d}"
+        size_gb = d["file_size_bytes"] / 1e9
+        lines.append(f"- {name} — temp {d['temperature']} — {size_gb:.1f} GB")
 
-    if len(candidates) > 10:
-        lines.append(f"... and {len(candidates) - 10} more")
+    if len(candidate_data) > 10:
+        lines.append(f"... and {len(candidate_data) - 10} more")
 
     body = "\n".join(lines)
     try:
@@ -125,14 +125,11 @@ async def _send_deletion_notification(candidates: list[DeletionCandidate]) -> No
             })
             if resp.status_code >= 400:
                 logger.warning("Apprise notification failed (HTTP %s): %s", resp.status_code, resp.text[:200])
-                return
+                return False
     except Exception as exc:
         logger.warning("Apprise notification failed: %s", exc)
-        return
-
-    now = datetime.utcnow()
-    for c in candidates:
-        c.notified_at = now
+        return False
+    return True
 
 
 async def get_item_protection(item: MediaItem, db: AsyncSession) -> tuple[bool, str | None, uuid.UUID | None]:
@@ -237,14 +234,33 @@ async def scan_deletion_candidates(db: AsyncSession | None = None) -> dict:
             new_candidates.append(candidate)
             created += 1
 
+        if new_candidates:
+            notification_data = [
+                {
+                    "title": c.title,
+                    "season_number": c.season_number,
+                    "episode_number": c.episode_number,
+                    "series_name": c.series_name,
+                    "series_id": c.series_id,
+                    "file_size_bytes": c.file_size_bytes,
+                    "temperature": c.temperature,
+                }
+                for c in new_candidates
+            ]
+
         await db.commit()
 
-        # ── Send notification for new candidates ──────────────────────────
         if new_candidates:
             try:
-                await _send_deletion_notification(new_candidates)
-                await db.commit()
-                notified = len(new_candidates)
+                sent = await _send_deletion_notification(notification_data)
+                if sent:
+                    now = datetime.utcnow()
+                    for c in new_candidates:
+                        c.notified_at = now
+                    await db.commit()
+                    notified = len(new_candidates)
+                else:
+                    notified = 0
             except Exception:
                 logger.exception("Failed to send deletion notification")
 
