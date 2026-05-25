@@ -218,6 +218,28 @@ export default function Preserve() {
   })
 
   const candidates = candidatesPage?.items ?? []
+  const sortedCandidates = useMemo(() => {
+    if (viewMode !== 'flat') return candidates
+    const sorted = [...candidates]
+    sorted.sort((a, b) => {
+      let va, vb
+      switch (groupSort) {
+        case 'name':
+          va = (a.title || '').toLowerCase()
+          vb = (b.title || '').toLowerCase()
+          return groupSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+        case 'temp':
+          va = a.temperature; vb = b.temperature
+          break
+        case 'size':
+          va = a.file_size_bytes; vb = b.file_size_bytes
+          break
+        default: return 0
+      }
+      return groupSortDir === 'asc' ? va - vb : vb - va
+    })
+    return sorted
+  }, [candidates, viewMode, groupSort, groupSortDir])
   const exceptions = exceptionsPage?.items ?? []
   const candTotal = candidatesPage?.total ?? 0
   const excTotal = exceptionsPage?.total ?? 0
@@ -354,27 +376,25 @@ export default function Preserve() {
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(0) }}
           />
-          {viewMode === 'grouped' && (
-            <div className="flex items-center gap-2 ml-auto">
-              <select
-                className="select w-28 text-xs"
-                value={groupSort}
-                onChange={e => setGroupSort(e.target.value)}
-              >
-                <option value="count">Episodes</option>
-                <option value="name">Name</option>
-                <option value="temp">Avg Temp</option>
-                <option value="size">Size</option>
-              </select>
-              <button
-                className="btn-ghost text-xs px-2"
-                onClick={() => setGroupSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-                title={groupSortDir === 'desc' ? 'Descending' : 'Ascending'}
-              >
-                {groupSortDir === 'desc' ? '↓' : '↑'}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 ml-auto">
+            <select
+              className="select w-28 text-xs"
+              value={groupSort}
+              onChange={e => setGroupSort(e.target.value)}
+            >
+              <option value="count">Episodes</option>
+              <option value="name">Name</option>
+              <option value="temp">Avg Temp</option>
+              <option value="size">Size</option>
+            </select>
+            <button
+              className="btn-ghost text-xs px-2"
+              onClick={() => setGroupSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+              title={groupSortDir === 'desc' ? 'Descending' : 'Ascending'}
+            >
+              {groupSortDir === 'desc' ? '↓' : '↑'}
+            </button>
+          </div>
           <span className="text-xs text-gray-600">{candTotal.toLocaleString()} total</span>
         </div>
 
@@ -391,7 +411,7 @@ export default function Preserve() {
               </tr>
             </thead>
             <tbody>
-              {candidates.map(c => (
+              {sortedCandidates.map(c => (
                 <tr key={c.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 group">
                   <td className="px-4 py-2.5 max-w-xs">
                     <div className="font-medium text-sm text-white truncate">{c.title}</div>
@@ -427,7 +447,7 @@ export default function Preserve() {
                   </td>
                 </tr>
               ))}
-              {candidates.length === 0 && !candFetching && (
+              {sortedCandidates.length === 0 && !candFetching && (
                 <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-600 text-sm">No candidates found</td></tr>
               )}
             </tbody>
