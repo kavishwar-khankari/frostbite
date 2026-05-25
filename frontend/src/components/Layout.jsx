@@ -4,6 +4,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 const NAV = [
   { to: '/overview',  label: 'Overview',   icon: '📊' },
   { to: '/library',   label: 'Library',    icon: '🎬' },
+  { to: '/preserve',  label: 'Preserve',   icon: '🛡️' },
   { to: '/transfers', label: 'Transfers',  icon: '🔄' },
   { to: '/analytics', label: 'Analytics',  icon: '📈' },
   { to: '/settings',  label: 'Settings',   icon: '⚙️'  },

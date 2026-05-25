@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Overview from './views/Overview'
 import Library from './views/Library'
+import Preserve from './views/Preserve'
 import Transfers from './views/Transfers'
 import Analytics from './views/Analytics'
 import Settings from './views/Settings'
@@ -14,6 +15,7 @@ export default function App() {
           <Route index element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<Overview />} />
           <Route path="library" element={<Library />} />
+          <Route path="preserve" element={<Preserve />} />
           <Route path="transfers" element={<Transfers />} />
           <Route path="analytics" element={<Analytics />} />
           <Route path="settings" element={<Settings />} />

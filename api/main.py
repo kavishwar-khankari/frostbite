@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 
 import api.deps as deps
-from api.routes import controls, dashboard, items, score_history, series, settings, status, transfers, webhook, ws
+from api.routes import controls, dashboard, deletion, items, score_history, series, settings, status, transfers, webhook, ws
 from core.jellyfin_client import JellyfinClient
 from core.runtime_settings import load_overrides
 from core.scheduler import start_scheduler, stop_scheduler
@@ -45,6 +45,7 @@ app.include_router(items.router, prefix="/api")
 app.include_router(status.router, prefix="/api")
 app.include_router(controls.router, prefix="/api")   # before transfers — avoids UUID param shadowing
 app.include_router(transfers.router, prefix="/api")
+app.include_router(deletion.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(series.router, prefix="/api")
 app.include_router(score_history.router, prefix="/api")

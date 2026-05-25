@@ -1,11 +1,14 @@
 # AGENTS.md — Frostbite
 
+## Project
+
+Intelligent tiered storage engine for Teapot (Jellyfin media server) that manages automatic tiered storage between NAS (hot) and OpenDrive cloud (cold). Full architecture: `docs/teapot-architecture.md`. This repo covers Sections 5 (Engine) + 6 (Dashboard).
+
 ## Quick reference
 - **Start**: `uvicorn api.main:app --host 0.0.0.0 --port 8000`
 - **Docker**: `docker build -t frostbite . && docker run`
 - **Run migrations**: `alembic upgrade head` (uses `DATABASE_URL` env var, NOT `alembic.ini`)
 - **Frontend dev**: `cd frontend && npm run dev` (Vite dev server)
-- **Infra context**: see `CLAUDE.md` for rclone endpoints, mergerfs layout, and K8s deployment details
 
 ## Architecture
 ```
@@ -18,6 +21,34 @@ models/database.py   → async engine, session factory
 config.py            → pydantic-settings, loads from env + .env
 frontend/            → React 18 SPA (Vite, TanStack Query, Recharts, Tailwind)
 ```
+
+### Tech stack
+- Python 3.12+, FastAPI, SQLAlchemy 2.0 + asyncpg, Alembic
+- PostgreSQL 16 (deployed separately in K8s)
+- APScheduler for periodic tasks
+- httpx for async rclone RC calls
+- WebSocket for live dashboard updates
+
+## Infrastructure (already running)
+- mergerfs union mount at /mnt/merged/media (NAS + cloud)
+- rclone mount (read-only, encrypted) at /mnt/cloud/media
+- rclone RC daemon at 127.0.0.1:5572 (transfers)
+- rclone mount RC at 127.0.0.1:5573 (VFS cache invalidation)
+- NAS direct at /mnt/nas/media
+- mergerfs xattr detection: `getfattr -n user.mergerfs.basepath <file>`
+
+## Key endpoints on the VM
+- rclone RC (transfers): POST http://127.0.0.1:5572
+- rclone RC (VFS cache): POST http://127.0.0.1:5573/vfs/forget
+- Jellyfin API: https://teapot.techtronics.top
+- Sonarr API: internal K8s service
+- Radarr API: internal K8s service
+
+## Deployment
+- Runs as a K8s Deployment in namespace "frostbite" with hostNetwork: true
+- Uses hostPath volumes for /mnt/merged/media and /mnt/nas/media
+- Config via Doppler secrets + ConfigMap
+- GitOps via ArgoCD
 
 ## Settings quirks
 - `config.settings` is a **mutable singleton**. `core.runtime_settings.load_overrides()` patches it in-place from `app_settings` DB rows at startup. Settings edits via the dashboard write to both DB and the in-memory object immediately (no restart needed).
@@ -45,8 +76,17 @@ normalized_id = event.jellyfin_id.replace("-", "")
 ## Transfer semantics
 - Transfers are **copy-then-verify-then-delete** via rclone RC — never raw moves.
 - Valid extensions locked in `core/transfer_manager.py:_MEDIA_EXTENSIONS`.
-- After each transfer, VFS cache is invalidated on ALL nodes via `rclone_vfs_urls`.
+- Cloud remote: `opendrive-crypt` (encrypted).
+- Freeze = move NAS → cloud via rclone RC sync/copy.
+- Reheat = copy cloud → NAS via rclone RC sync/copy.
+- After each transfer, VFS cache is invalidated on ALL nodes via POST to :5573/vfs/forget.
 - `import httpx` is used inline in some places (e.g. `scheduler.py:293`) — not top-level.
+
+## Testing benchmarks
+- OpenDrive upload speed: ~300 KB/s to 1.5 MB/s (throttled)
+- OpenDrive download speed: 3-11 MB/s (unthrottled)
+- Cold file playback start: ~1-2 seconds
+- Cold file seek: ~10 seconds (OpenDrive download speed limited)
 
 ## No test/lint framework
 There are **no tests, no linter config, no type checker, no CI checks** beyond Docker build. If asked to add any, you are starting from scratch — pick tools, write configs, and wire them up.
@@ -55,6 +95,15 @@ There are **no tests, no linter config, no type checker, no CI checks** beyond D
 - `requirements.txt` uses `>=` bounds — **not pinned**.
 - `frontend/package-lock.json` is **gitignored**; Dockerfile falls back to `npm install` without lockfile.
 - Docker image includes rclone (installed in the build stage).
+
+## Incidents
+Frostbite-specific operational incidents are tracked in `incidents/`. Read `incidents/README.md` first, then the relevant incident file.
+
+When you solve a Frostbite incident:
+1. Create `incidents/<NNN>-<slug>.md` using the next available number (check `incidents/README.md` for the last used).
+2. Follow this structure: Date, Symptoms, Affected, Root Cause, Fix Steps, Prevention.
+3. If the incident is a recurrence of a previous one, update the existing file instead of creating a new one.
+4. Append a row to the index table in `incidents/README.md`.
 
 ## graphify
 
@@ -73,5 +122,5 @@ Always delegate web searches to the `websearch` subagent via the Task tool. Exam
 ## Reading Reddit threads
 
 The new Reddit UI (`www.reddit.com`) blocks direct fetch with a verification wall. Use either of these instead:
-- **JSON API**: append `.json` to the URL (e.g. `https://www.reddit.com/r/subreddit/comments/.../.json`) — use `webfetch` with `format: text`.
-- **Old Reddit**: replace `www.reddit.com` with `old.reddit.com` — use `webfetch` with `format: markdown`.
+- **JSON API**: append `.json` to the URL (e.g. `https://www.reddit.com/r/subreddit/comments/.../.json`) — use `searxng_web_url_read` with `maxLength` or `paragraphRange`.
+- **Old Reddit**: replace `www.reddit.com` with `old.reddit.com` — use `searxng_web_url_read`.

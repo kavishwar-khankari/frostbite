@@ -28,6 +28,7 @@ async def start_scheduler() -> None:
     _scheduler.add_job(cleanup_stale_transfers, "interval", hours=1, id="stale_cleanup")
     _scheduler.add_job(record_score_snapshot, "interval", minutes=30, id="score_snapshot")
     _scheduler.add_job(scheduled_library_sync, "cron", hour=3, minute=0, id="library_sync")
+    _scheduler.add_job(_safe_deletion_scan, "interval", minutes=30, id="deletion_scan")
     _scheduler.start()
     await start_worker()
     logger.info("Scheduler started")
@@ -46,6 +47,14 @@ async def _safe_tdarr_sync() -> None:
         await sync_tdarr_eligibility()
     except Exception:
         logger.exception("Scheduled Tdarr sync failed")
+
+
+async def _safe_deletion_scan() -> None:
+    try:
+        from core.deletion_manager import scan_deletion_candidates
+        await scan_deletion_candidates()
+    except Exception:
+        logger.exception("Scheduled deletion candidate scan failed")
 
 
 async def sync_tdarr_eligibility() -> None:
@@ -115,7 +124,8 @@ async def scoring_sweep() -> None:
                 or_(
                     MediaItem.tdarr_eligible == True,  # noqa: E712
                     MediaItem.storage_tier == "cold",
-                )
+                ),
+                MediaItem.storage_tier != "deleted",
             )
         )
         items = list(result.scalars())
@@ -275,7 +285,7 @@ async def record_score_snapshot() -> None:
                 func.sum(case((MediaItem.storage_tier == "hot", 1), else_=0)).label("hot"),
                 func.sum(case((MediaItem.storage_tier == "cold", 1), else_=0)).label("cold"),
                 func.avg(MediaItem.temperature).label("avg_temp"),
-            )
+            ).where(MediaItem.storage_tier != "deleted")
         )
         row = result.one()
 

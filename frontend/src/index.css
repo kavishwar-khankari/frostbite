@@ -51,4 +51,10 @@
   .badge-transferring {
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-800/50;
   }
+  .badge-deleted {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-950/50 text-red-300 border border-red-900/60;
+  }
+  .badge-protected {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-950/50 text-emerald-300 border border-emerald-900/60;
+  }
 }

@@ -176,6 +176,14 @@ async def run_library_sync() -> dict:
             existing = result.scalar_one_or_none()
 
             if existing:
+                if existing.storage_tier == "deleted" and not os.path.exists(nas_path):
+                    tier = "deleted"
+                elif existing.storage_tier == "deleted" and os.path.exists(nas_path):
+                    tier = "hot"
+                    existing.deleted_at = None
+                else:
+                    tier = tier
+
                 existing.title = compact["title"]
                 existing.series_id = compact["series_id"]
                 existing.series_name = compact["series_name"]

@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # Space management
     emergency_freeze_threshold_gb: float = 15.0
 
+    # Deletion
+    deletion_threshold: float = 3.0
+
+    # Apprise notifications
+    apprise_url: str = "http://apprise.apprise.svc.cluster.local:8000"
+    apprise_config_key: str = "frostbite"
+    frostbite_public_url: str = "https://frostbite.techtronics.top"
+    deletion_notifications_enabled: bool = True
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

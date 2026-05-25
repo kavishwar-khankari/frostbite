@@ -53,6 +53,11 @@ const SETTING_META = {
     desc: 'When NAS free space drops below this value, emergency freezes are triggered.',
     min: 0, max: 10000, step: 10, unit: ' GB',
   },
+  deletion_threshold: {
+    label: 'Deletion Approval Threshold',
+    desc: 'Cold media at or below this temperature becomes a pending deletion approval. Deletion still requires manual approval from the Preserve tab.',
+    min: 0, max: 100, step: 0.5, unit: '°',
+  },
 }
 
 function SettingRow({ name, value, onSave }) {

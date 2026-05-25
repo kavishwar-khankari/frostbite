@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, Float, ForeignKey, Index, Integer,
-    String, Text, func,
+    String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -44,6 +44,7 @@ class MediaItem(Base):
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     last_scored_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_prefetch_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Jellyfin metadata
     date_added: Mapped[datetime | None] = mapped_column(nullable=True)
@@ -162,3 +163,62 @@ class ScoreHistory(Base):
     nas_used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     cloud_used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     avg_temperature: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class DeletionException(Base):
+    __tablename__ = "deletion_exceptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    jellyfin_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    series_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_deletion_exceptions_scope", "scope"),
+        Index("idx_deletion_exceptions_jellyfin_id", "jellyfin_id"),
+        Index("idx_deletion_exceptions_series_id", "series_id"),
+    )
+
+
+class DeletionCandidate(Base):
+    __tablename__ = "deletion_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    media_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("media_items.id", ondelete="SET NULL"), nullable=True
+    )
+    jellyfin_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    series_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    series_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    season_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    temperature: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    notified_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    media_item: Mapped["MediaItem | None"] = relationship()
+
+    __table_args__ = (
+        Index("idx_deletion_candidates_status", "status"),
+        Index("idx_deletion_candidates_jellyfin_id", "jellyfin_id"),
+        Index("idx_deletion_candidates_media_item_id", "media_item_id"),
+        Index("idx_deletion_candidates_created_at", "created_at"),
+    )

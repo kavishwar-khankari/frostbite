@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from api.deps import DBSession
+from core.deletion_manager import get_item_protection
 from models.schemas import MediaItemResponse
-from models.tables import MediaItem
+from models.tables import MediaItem, DeletionException
 
 router = APIRouter()
 
@@ -41,6 +42,7 @@ async def list_items(
     order: str = Query("desc", description="asc or desc"),
     limit: int = Query(100, le=2000),
     offset: int = Query(0, ge=0),
+    include_deleted: bool = Query(False),
 ) -> ItemsPage:
     col = _SORT_COLUMNS.get(sort, MediaItem.temperature)
     direction = col.desc() if order == "desc" else col.asc()
@@ -48,6 +50,8 @@ async def list_items(
     base = select(MediaItem)
     if tier:
         base = base.where(MediaItem.storage_tier == tier)
+    elif not include_deleted:
+        base = base.where(MediaItem.storage_tier != "deleted")
     if item_type:
         base = base.where(MediaItem.item_type == item_type)
     if series_id:
@@ -60,7 +64,51 @@ async def list_items(
 
     q = base.order_by(direction).limit(limit).offset(offset)
     result = await db.execute(q)
-    return ItemsPage(total=total, items=list(result.scalars().all()))
+    items = list(result.scalars().all())
+
+    if items:
+        jellyfin_ids = [i.jellyfin_id for i in items]
+        series_ids = [i.series_id for i in items if i.series_id]
+
+        item_exc_result = await db.execute(
+            select(DeletionException).where(
+                DeletionException.scope == "item",
+                DeletionException.jellyfin_id.in_(jellyfin_ids),
+            )
+        )
+        item_exceptions: dict[str, DeletionException] = {
+            e.jellyfin_id: e for e in item_exc_result.scalars() if e.jellyfin_id
+        }
+
+        series_exceptions: dict[str, DeletionException] = {}
+        if series_ids:
+            s_exc_result = await db.execute(
+                select(DeletionException).where(
+                    DeletionException.scope == "series",
+                    DeletionException.series_id.in_(series_ids),
+                )
+            )
+            series_exceptions = {
+                e.series_id: e for e in s_exc_result.scalars() if e.series_id
+            }
+
+        enriched = []
+        for item in items:
+            resp = MediaItemResponse.model_validate(item)
+            if item.jellyfin_id in item_exceptions:
+                exc = item_exceptions[item.jellyfin_id]
+                resp.deletion_protected = True
+                resp.deletion_protection_scope = "item"
+                resp.deletion_exception_id = exc.id
+            elif item.series_id and item.series_id in series_exceptions:
+                exc = series_exceptions[item.series_id]
+                resp.deletion_protected = True
+                resp.deletion_protection_scope = "series"
+                resp.deletion_exception_id = exc.id
+            enriched.append(resp)
+        return ItemsPage(total=total, items=enriched)
+
+    return ItemsPage(total=total, items=items)
 
 
 @router.get("/items/{jellyfin_id}/score-breakdown")

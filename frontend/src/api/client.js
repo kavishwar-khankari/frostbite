@@ -121,3 +121,44 @@ export const getSettings = () => req('/settings')
 
 export const updateSetting = (key, value) =>
   req('/settings', { method: 'PUT', body: JSON.stringify({ key, value }) })
+
+// ── Deletion ──────────────────────────────────────────────────────────────
+export const getDeletionCandidates = (params = {}) => {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return req(`/deletion/candidates${qs ? `?${qs}` : ''}`)
+}
+
+export const scanDeletionCandidates = () =>
+  req('/deletion/scan', { method: 'POST' })
+
+export const approveDeletionCandidate = (id) =>
+  req(`/deletion/candidates/${id}/approve`, { method: 'POST' })
+
+export const protectCandidateItem = (id) =>
+  req(`/deletion/candidates/${id}/protect-item`, { method: 'POST' })
+
+export const protectCandidateSeries = (id) =>
+  req(`/deletion/candidates/${id}/protect-series`, { method: 'POST' })
+
+export const getDeletionExceptions = (params = {}) => {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return req(`/deletion/exceptions${qs ? `?${qs}` : ''}`)
+}
+
+export const getDeletionStats = () => req('/deletion/stats')
+
+export const protectItem = (jellyfin_id, reason = null) =>
+  req('/deletion/exceptions/item', { method: 'POST', body: JSON.stringify({ jellyfin_id, reason }) })
+
+export const protectItems = (jellyfin_ids, reason = null) =>
+  req('/deletion/exceptions/bulk-items', { method: 'POST', body: JSON.stringify({ jellyfin_ids, reason }) })
+
+export const protectSeries = (series_id, reason = null) =>
+  req('/deletion/exceptions/series', { method: 'POST', body: JSON.stringify({ series_id, reason }) })
+
+export const removeDeletionException = (id) =>
+  req(`/deletion/exceptions/${id}`, { method: 'DELETE' })

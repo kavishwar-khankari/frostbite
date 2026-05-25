@@ -2,13 +2,15 @@
 
 import os
 
+import uuid
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 
 from api.deps import DBSession
 from config import settings
-from models.tables import MediaItem
+from models.tables import MediaItem, DeletionException
 
 router = APIRouter()
 
@@ -65,6 +67,8 @@ class SeriesSummary(BaseModel):
     total_size_bytes: int
     last_added: str | None
     seasons: list[SeasonSummary] = []
+    deletion_protected: bool = False
+    deletion_exception_id: uuid.UUID | None = None
 
 
 _SORT_MAP = {
@@ -95,7 +99,7 @@ async def list_series(
             func.min(MediaItem.file_path).label("sample_path"),
             func.max(MediaItem.date_added).label("last_added"),
         )
-        .where(MediaItem.series_id.isnot(None))
+        .where(MediaItem.series_id.isnot(None), MediaItem.storage_tier != "deleted")
         .group_by(MediaItem.series_id, MediaItem.series_name)
         .order_by(order_by)
     )
@@ -109,7 +113,7 @@ async def list_series(
             func.avg(MediaItem.temperature).label("avg_temp"),
             func.sum(MediaItem.file_size_bytes).label("total_size"),
         )
-        .where(MediaItem.series_id.isnot(None))
+        .where(MediaItem.series_id.isnot(None), MediaItem.storage_tier != "deleted")
         .group_by(MediaItem.series_id, MediaItem.season_number)
         .order_by(MediaItem.series_id, MediaItem.season_number)
     )
@@ -133,6 +137,20 @@ async def list_series(
             )
         )
 
+    series_rows = list(series_result.all())
+    series_ids = [r.series_id for r in series_rows]
+    series_exc_map: dict[str, DeletionException] = {}
+    if series_ids:
+        exc_result = await db.execute(
+            select(DeletionException).where(
+                DeletionException.scope == "series",
+                DeletionException.series_id.in_(series_ids),
+            )
+        )
+        series_exc_map = {
+            e.series_id: e for e in exc_result.scalars() if e.series_id
+        }
+
     return [
         SeriesSummary(
             series_id=row.series_id,
@@ -145,6 +163,8 @@ async def list_series(
             total_size_bytes=row.total_size or 0,
             last_added=row.last_added.strftime("%Y-%m-%d") if row.last_added else None,
             seasons=seasons_by_series.get(row.series_id, []),
+            deletion_protected=row.series_id in series_exc_map,
+            deletion_exception_id=series_exc_map[row.series_id].id if row.series_id in series_exc_map else None,
         )
-        for row in series_result.all()
+        for row in series_rows
     ]

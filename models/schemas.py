@@ -25,6 +25,10 @@ class MediaItemResponse(BaseModel):
     tdarr_eligible: bool
     tdarr_status: str | None
     upload_blocked: bool
+    deleted_at: datetime | None = None
+    deletion_protected: bool = False
+    deletion_protection_scope: str | None = None
+    deletion_exception_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -231,3 +235,94 @@ class PlaybackEventIn(BaseModel):
             ),
             file_path=file_path,
         )
+
+
+# ── Deletion ──────────────────────────────────────────────────────────────────
+
+class DeletionCandidateResponse(BaseModel):
+    id: uuid.UUID
+    media_item_id: uuid.UUID | None
+    jellyfin_id: str
+    title: str
+    item_type: str
+    series_id: str | None
+    series_name: str | None
+    season_number: int | None
+    episode_number: int | None
+    file_path: str
+    file_size_bytes: int
+    temperature: float
+    status: str
+    notified_at: datetime | None
+    approved_at: datetime | None
+    deleted_at: datetime | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DeletionCandidatePage(BaseModel):
+    items: list[DeletionCandidateResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class DeletionExceptionResponse(BaseModel):
+    id: uuid.UUID
+    scope: str
+    jellyfin_id: str | None
+    series_id: str | None
+    title: str | None
+    reason: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DeletionExceptionPage(BaseModel):
+    items: list[DeletionExceptionResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class DeletionStatsResponse(BaseModel):
+    pending_candidates: int = 0
+    failed_candidates: int = 0
+    deleted_candidates: int = 0
+    item_exceptions: int = 0
+    series_exceptions: int = 0
+
+
+class DeletionScanResult(BaseModel):
+    scanned: int = 0
+    created: int = 0
+    superseded: int = 0
+    protected: int = 0
+    notified: int = 0
+
+
+class ItemExceptionRequest(BaseModel):
+    jellyfin_id: str
+    reason: str | None = None
+
+
+class BulkItemExceptionRequest(BaseModel):
+    jellyfin_ids: list[str]
+    reason: str | None = None
+
+
+class SeriesExceptionRequest(BaseModel):
+    series_id: str
+    reason: str | None = None
+
+
+class DeletionActionResult(BaseModel):
+    status: str
+    candidate_id: uuid.UUID | None = None
+    deleted: bool = False
+    protected: bool = False
+    message: str | None = None

@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature, getScoreBreakdown, freezeSeries, reheatSeries } from '../api/client'
+import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature, getScoreBreakdown, freezeSeries, reheatSeries, protectItem, protectItems, protectSeries, removeDeletionException } from '../api/client'
 import TierBadge from '../components/TierBadge'
 import TemperatureBar from '../components/TemperatureBar'
 
@@ -136,6 +136,14 @@ function ItemRow({ item, selected, onSelect }) {
     mutationFn: (t) => overrideTemperature(item.jellyfin_id, parseFloat(t)),
     onSuccess: () => { setEditTemp(false); qc.invalidateQueries({ queryKey: ['items'] }) },
   })
+  const protect = useMutation({
+    mutationFn: () => protectItem(item.jellyfin_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['items'] }),
+  })
+  const unprotect = useMutation({
+    mutationFn: () => removeDeletionException(item.deletion_exception_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['items'] }),
+  })
 
   return (
     <tr className="border-b border-gray-800/50 hover:bg-gray-800/20 group">
@@ -150,6 +158,12 @@ function ItemRow({ item, selected, onSelect }) {
       <td className="px-3 py-2.5 max-w-xs">
         <div className="font-medium text-sm text-white truncate">{item.title}</div>
         <div className="text-xs text-gray-600 truncate">{item.file_path}</div>
+        {item.deletion_protected && (
+          <span className={`text-xs ${item.deletion_protection_scope === 'series' ? 'text-emerald-500/70' : 'text-emerald-400/60'}`}
+            title={item.deletion_protection_scope === 'series' ? 'Protected by series' : 'Protected from deletion'}>
+            🛡 {item.deletion_protection_scope === 'series' ? 'Series protected' : 'Protected'}
+          </span>
+        )}
       </td>
       <td className="px-3 py-2.5 text-center">
         <div className="flex items-center justify-center gap-1.5">
@@ -188,6 +202,18 @@ function ItemRow({ item, selected, onSelect }) {
       <td className="px-3 py-2.5 text-xs text-gray-500 text-right">{fmtDate(item.date_added)}</td>
       <td className="px-3 py-2.5 text-right w-20">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {item.deletion_protected ? (
+            <button className="btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 text-xs py-0.5 px-2"
+              onClick={() => unprotect.mutate()} disabled={unprotect.isPending}
+              title={item.deletion_protection_scope === 'series' ? 'Unprotect series' : 'Unprotect'}>
+              {unprotect.isPending ? '…' : '🛡 Off'}
+            </button>
+          ) : (
+            <button className="btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 text-xs py-0.5 px-2"
+              onClick={() => protect.mutate()} disabled={protect.isPending}>
+              {protect.isPending ? '…' : '🛡 Protect'}
+            </button>
+          )}
           {item.storage_tier === 'hot' && !item.upload_blocked && (
             <button className="btn bg-frost-900/40 hover:bg-frost-800/60 text-frost-300 text-xs py-0.5 px-2"
               onClick={() => freeze.mutate()} disabled={freeze.isPending}>Freeze</button>
@@ -301,6 +327,14 @@ function SeriesCard({ series }) {
     mutationFn: () => reheatSeries(series.series_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['series'] }),
   })
+  const protectSeriesMut = useMutation({
+    mutationFn: () => protectSeries(series.series_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['series'] }),
+  })
+  const unprotectSeriesMut = useMutation({
+    mutationFn: () => removeDeletionException(series.deletion_exception_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['series'] }),
+  })
 
   return (
     <div className="card p-0 overflow-hidden group/series">
@@ -330,6 +364,25 @@ function SeriesCard({ series }) {
         </div>
         {/* Series-level actions */}
         <div className="flex gap-1 pr-4 opacity-0 group-hover/series:opacity-100 transition-opacity shrink-0">
+          {series.deletion_protected ? (
+            <button
+              className="btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 text-xs py-1 px-2.5"
+              onClick={() => unprotectSeriesMut.mutate()}
+              disabled={unprotectSeriesMut.isPending}
+              title="Remove series deletion protection"
+            >
+              {unprotectSeriesMut.isPending ? '…' : '🛡 Unprotect'}
+            </button>
+          ) : (
+            <button
+              className="btn bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 text-xs py-1 px-2.5"
+              onClick={() => protectSeriesMut.mutate()}
+              disabled={protectSeriesMut.isPending}
+              title="Protect all episodes in this series from deletion"
+            >
+              {protectSeriesMut.isPending ? '…' : '🛡 Protect series'}
+            </button>
+          )}
           {series.hot_episodes > 0 && (
             <button
               className="btn bg-frost-900/40 hover:bg-frost-800/60 text-frost-300 text-xs py-1 px-2.5"
@@ -428,6 +481,10 @@ export default function Library() {
     mutationFn: () => bulkReheat([...selected]),
     onSuccess: () => { setSelected(new Set()); qc.invalidateQueries({ queryKey: ['items'] }) },
   })
+  const bulkProtectMut = useMutation({
+    mutationFn: () => protectItems([...selected]),
+    onSuccess: () => { setSelected(new Set()); qc.invalidateQueries({ queryKey: ['items'] }) },
+  })
 
   const items = itemsQuery.data?.items ?? []
   const total = itemsQuery.data?.total ?? 0
@@ -511,6 +568,10 @@ export default function Library() {
             <button className="btn bg-orange-900/50 hover:bg-orange-800/60 text-orange-300 text-sm"
               onClick={() => bulkRhtMut.mutate()} disabled={bulkRhtMut.isPending}>
               🔥 Reheat selected
+            </button>
+            <button className="btn bg-emerald-900/50 hover:bg-emerald-800/60 text-emerald-300 text-sm"
+              onClick={() => bulkProtectMut.mutate()} disabled={bulkProtectMut.isPending}>
+              🛡 Protect selected
             </button>
           </div>
         </div>

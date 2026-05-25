@@ -23,7 +23,7 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
             func.sum(case((MediaItem.storage_tier == "cold", 1), else_=0)).label("cold"),
             func.sum(case((MediaItem.storage_tier == "transferring", 1), else_=0)).label("transferring"),
             func.avg(MediaItem.temperature).label("avg_temp"),
-        )
+        ).where(MediaItem.storage_tier != "deleted")
     )
     row = counts.one()
 
