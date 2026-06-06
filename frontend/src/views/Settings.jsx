@@ -53,6 +53,11 @@ const SETTING_META = {
     desc: 'When NAS free space drops below this value, emergency freezes are triggered.',
     min: 0, max: 10000, step: 10, unit: ' GB',
   },
+  cold_transfer_min_nas_used_gb: {
+    label: 'Cold Transfer NAS Usage Limit',
+    desc: 'Freeze transfers start only when NAS used is at or above this value. Below it, queued cold transfers wait.',
+    min: 0, max: 10000, step: 10, unit: ' GB',
+  },
   deletion_threshold: {
     label: 'Deletion Approval Threshold',
     desc: 'Cold media at or below this temperature becomes a pending deletion approval. Deletion still requires manual approval from the Preserve tab.',

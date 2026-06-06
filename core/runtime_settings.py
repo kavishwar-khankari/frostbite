@@ -28,6 +28,7 @@ EDITABLE_KEYS: dict[str, type] = {
     "max_concurrent_reheats": int,
     "max_concurrent_freezes": int,
     "emergency_freeze_threshold_gb": float,
+    "cold_transfer_min_nas_used_gb": float,
     "deletion_threshold": float,
 }
 

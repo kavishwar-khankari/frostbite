@@ -7,7 +7,7 @@ from sqlalchemy import select
 from api.deps import DBSession
 from sqlalchemy import select
 
-from core.transfer_manager import is_paused, pause_all_transfers, queue_transfer, resume_transfers
+from core.transfer_manager import cold_transfer_gate_status, is_paused, pause_all_transfers, queue_transfer, resume_transfers
 from models.tables import Transfer
 from models.schemas import ManualTransferRequest, TransferResponse
 from models.tables import MediaItem
@@ -61,7 +61,15 @@ async def resume() -> dict:
 
 @router.get("/transfers/worker-status")
 async def worker_status() -> dict:
-    return {"paused": is_paused()}
+    gate = cold_transfer_gate_status()
+    return {
+        "paused": is_paused(),
+        "cold_transfers_paused": gate.paused,
+        "cold_transfers_can_start": gate.can_start,
+        "cold_transfer_pause_reason": gate.reason,
+        "nas_used_gb": gate.nas_used_gb,
+        "cold_transfer_min_nas_used_gb": gate.limit_gb,
+    }
 
 
 class SeriesActionRequest(BaseModel):

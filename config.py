@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     # Space management
     emergency_freeze_threshold_gb: float = 15.0
+    cold_transfer_min_nas_used_gb: float = 3000.0
 
     # Deletion
     deletion_threshold: float = 3.0

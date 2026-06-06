@@ -5,6 +5,7 @@ import {
   pauseAllTransfers, resumeTransfers,
   cancelTransfer, bulkCancelTransfers, bulkBumpTransfers, bulkRetryTransfers,
 } from '../api/client'
+import ColdTransferPauseNotice from '../components/ColdTransferPauseNotice'
 import TransferRow from '../components/TransferRow'
 
 function fmtTime(iso) {
@@ -96,6 +97,8 @@ export default function Transfers() {
     refetchInterval: 2_000,
   })
   const paused = workerStatus?.paused ?? false
+  const coldTransfersPaused = workerStatus?.cold_transfers_paused ?? false
+  const coldTransferPauseReason = workerStatus?.cold_transfer_pause_reason
 
   // Search is now server-side; displayed = transfers
   const displayed = transfers
@@ -156,6 +159,11 @@ export default function Transfers() {
               Paused
             </span>
           )}
+          {coldTransfersPaused && (
+            <span className="text-xs font-medium uppercase tracking-wide text-amber-300 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded">
+              Cold Paused
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500">
@@ -174,6 +182,8 @@ export default function Transfers() {
           )}
         </div>
       </div>
+
+      <ColdTransferPauseNotice status={workerStatus} />
 
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
@@ -312,7 +322,7 @@ export default function Transfers() {
                 className="rounded bg-gray-700 border-gray-600 shrink-0"
               />
               <div className="flex-1 min-w-0">
-                <TransferRow transfer={t} />
+                <TransferRow transfer={t} coldTransferPauseReason={coldTransferPauseReason} />
               </div>
             </div>
             <div className="flex gap-4 pb-2 pl-6 text-xs text-gray-600">

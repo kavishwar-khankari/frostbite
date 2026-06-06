@@ -670,7 +670,7 @@ Manages the priority queue of freeze/reheat operations. Communicates with the rc
 **Design principles:**
 - Maximum 2 concurrent transfers (1 freeze + 1 reheat, or 2 reheats). Reheats always take priority.
 - Reheat priority order: manual request > active prefetch > auto-score
-- Freeze only runs during configurable windows (e.g., 00:00-08:00 IST) OR when NAS free space drops below 20GB
+- Freeze only runs during configurable windows (e.g., 00:00-08:00 IST) and only when NAS used space is at or above the configured cold-transfer safe limit (default 3000GB). Active freezes are allowed to finish if usage later drops below the limit.
 - All transfers are async rclone RC jobs — Frostbite polls `core/stats` every 2 seconds for progress
 
 ```python
@@ -745,6 +745,8 @@ After a **reheat** completes:
 ### 5.7 NAS Space Monitor
 
 A background task that watches NAS free space and triggers emergency freezes if needed.
+
+Cold transfers also have a NAS-used gate: queued freezes do not start until global NAS usage is at or above `cold_transfer_min_nas_used_gb`. When usage is below that limit, queued freezes stay queued, active freezes finish safely, and reheat transfers continue normally. The dashboard and Transfers tab surface this as a cold-transfer pause reason.
 
 ```python
 async def check_nas_space():

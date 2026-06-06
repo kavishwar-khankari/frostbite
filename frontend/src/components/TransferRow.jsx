@@ -31,7 +31,7 @@ const STATUS_COLOR = {
   retried:   'text-amber-400',
 }
 
-export default function TransferRow({ transfer }) {
+export default function TransferRow({ transfer, coldTransferPauseReason }) {
   const qc = useQueryClient()
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['transfers'], exact: false })
@@ -52,6 +52,9 @@ export default function TransferRow({ transfer }) {
 
   const title = transfer.item_title ?? transfer.id
   const isEpisode = transfer.item_type === 'episode'
+  const waitingOnNasUsage = transfer.status === 'queued'
+    && transfer.direction === 'freeze'
+    && coldTransferPauseReason
 
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-gray-800/60 last:border-0">
@@ -85,6 +88,11 @@ export default function TransferRow({ transfer }) {
               <span>{fmtBytes(transfer.bytes_transferred)} / {fmtBytes(transfer.bytes_total)}</span>
               <span>{fmtSpeed(transfer.speed_bps)} {fmtEta(transfer.eta_seconds) && `· ETA ${fmtEta(transfer.eta_seconds)}`}</span>
             </div>
+          </div>
+        )}
+        {waitingOnNasUsage && (
+          <div className="mt-1 text-xs text-amber-400/90 truncate" title={coldTransferPauseReason}>
+            Waiting: NAS usage is below the cold-transfer safe limit.
           </div>
         )}
         {transfer.error_message && (

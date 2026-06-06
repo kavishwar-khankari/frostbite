@@ -52,3 +52,14 @@ def nas_free_bytes() -> int:
         return sv.f_bavail * sv.f_frsize
     except OSError:
         return 0
+
+
+def nas_used_bytes() -> int | None:
+    """Return bytes used on the NAS mount, or None if statvfs fails."""
+    try:
+        sv = os.statvfs(settings.nas_root)
+        total = sv.f_blocks * sv.f_frsize
+        available = sv.f_bavail * sv.f_frsize
+        return max(total - available, 0)
+    except OSError:
+        return None

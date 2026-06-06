@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getDashboard, getScoreHistory, getSettings, triggerLibrarySync, triggerScoringRun, triggerTdarrSync, importPlaybackHistory } from '../api/client'
+import { getDashboard, getScoreHistory, getSettings, getWorkerStatus, triggerLibrarySync, triggerScoringRun, triggerTdarrSync, importPlaybackHistory } from '../api/client'
+import ColdTransferPauseNotice from '../components/ColdTransferPauseNotice'
 import StatCard from '../components/StatCard'
 import TransferRow from '../components/TransferRow'
 import {
@@ -58,6 +59,11 @@ export default function Overview() {
     queryKey: ['settings'],
     queryFn: getSettings,
     refetchInterval: 60_000,
+  })
+  const { data: workerStatus } = useQuery({
+    queryKey: ['worker-status'],
+    queryFn: getWorkerStatus,
+    refetchInterval: 10_000,
   })
 
   const { data: history = [] } = useQuery({
@@ -231,6 +237,8 @@ export default function Overview() {
         </div>
       )}
 
+      <ColdTransferPauseNotice status={workerStatus} />
+
       {/* Active transfers */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
@@ -251,7 +259,9 @@ export default function Overview() {
           </div>
         </div>
         {stats?.active_transfers?.length > 0 ? (
-          stats.active_transfers.map(t => <TransferRow key={t.id} transfer={t} />)
+          stats.active_transfers.map(t => (
+            <TransferRow key={t.id} transfer={t} coldTransferPauseReason={workerStatus?.cold_transfer_pause_reason} />
+          ))
         ) : (
           <div className="text-sm text-gray-600 py-2">No active transfers</div>
         )}
@@ -264,7 +274,9 @@ export default function Overview() {
             <div className="text-sm font-medium text-gray-300">Upcoming Transfers</div>
             <span className="text-xs text-gray-500">{stats.queued_transfers} in queue</span>
           </div>
-          {stats.queued_transfer_list.map(t => <TransferRow key={t.id} transfer={t} />)}
+          {stats.queued_transfer_list.map(t => (
+            <TransferRow key={t.id} transfer={t} coldTransferPauseReason={workerStatus?.cold_transfer_pause_reason} />
+          ))}
         </div>
       )}
     </div>

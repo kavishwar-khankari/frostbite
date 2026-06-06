@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routes.ws import broadcast
 from config import settings
+from core.filesystem import nas_used_bytes
 from models.database import async_session_factory
 from models.tables import MediaItem, Transfer
 
@@ -34,8 +36,46 @@ _MEDIA_EXTENSIONS = frozenset({
 })
 
 
+@dataclass(frozen=True)
+class ColdTransferGateStatus:
+    can_start: bool
+    paused: bool
+    nas_used_gb: float | None
+    limit_gb: float
+    reason: str | None
+
+
 def is_paused() -> bool:
     return _paused
+
+
+def cold_transfer_gate_status() -> ColdTransferGateStatus:
+    """Return whether freeze transfers may start under the NAS usage rule."""
+    limit_gb = settings.cold_transfer_min_nas_used_gb
+    if limit_gb <= 0:
+        return ColdTransferGateStatus(True, False, None, limit_gb, None)
+
+    used_bytes = nas_used_bytes()
+    if used_bytes is None:
+        return ColdTransferGateStatus(
+            False,
+            True,
+            None,
+            limit_gb,
+            f"Cold transfers are paused because NAS usage could not be read from {settings.nas_root}.",
+        )
+
+    used_gb = used_bytes / (1024 ** 3)
+    if used_gb < limit_gb:
+        return ColdTransferGateStatus(
+            False,
+            True,
+            used_gb,
+            limit_gb,
+            f"Cold transfers are paused because NAS used {used_gb:.1f} GB is below the safe limit of {limit_gb:.1f} GB.",
+        )
+
+    return ColdTransferGateStatus(True, False, used_gb, limit_gb, None)
 
 
 class TransferManager:
@@ -180,7 +220,9 @@ async def _process_queue() -> None:
                 await _start_next(db, "reheat")
             if active_freezes < settings.max_concurrent_freezes:
                 if _freeze_window_active():
-                    await _start_next(db, "freeze")
+                    gate = cold_transfer_gate_status()
+                    if gate.can_start:
+                        await _start_next(db, "freeze")
 
         await db.commit()
 
