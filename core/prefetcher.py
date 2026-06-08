@@ -142,6 +142,12 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
                 await queue_transfer(db, premiere.id, direction="reheat", trigger="prefetch", priority=75)
 
 
+async def prefetch_after_playback_start(db: AsyncSession, item: MediaItem) -> None:
+    """Queue predictive prefetches for a newly started playback item."""
+    if item.item_type == "episode":
+        await _prefetch_next_episodes(db, item)
+
+
 # ── Public handlers ───────────────────────────────────────────────────────────
 
 async def on_playback_start(event: PlaybackEventIn) -> None:
@@ -154,8 +160,7 @@ async def on_playback_start(event: PlaybackEventIn) -> None:
         await _record_event(db, item, event)
         await _boost_temperature(db, item, 30.0)
 
-        if item.item_type == "episode":
-            await _prefetch_next_episodes(db, item)
+        await prefetch_after_playback_start(db, item)
 
         await db.commit()
         await broadcast({"type": "score_update", "jellyfin_id": item.jellyfin_id, "temperature": item.temperature})
@@ -214,7 +219,7 @@ async def on_playback_progress(event: PlaybackEventIn) -> None:
                     device_name=event.device_name,
                 ))
                 await _boost_temperature(db, item, 30.0)
-                await _prefetch_next_episodes(db, item)
+                await prefetch_after_playback_start(db, item)
 
         await db.commit()
 

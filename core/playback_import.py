@@ -49,18 +49,19 @@ FROM PlaybackActivity
 WHERE ItemType IN ('Episode', 'Movie')
 """
     if since:
-        # Use ISO format without timezone — the plugin DB stores naive UTC strings.
-        since_str = since.strftime("%Y-%m-%d %H:%M:%S")
+        # Keep microseconds so rows at the cursor timestamp are not imported
+        # again on the next poll.
+        since_str = since.strftime("%Y-%m-%d %H:%M:%S.%f")
         base += f"  AND DateCreated > '{since_str}'\n"
     base += "ORDER BY DateCreated"
     return base
 
 
-def _parse_date(raw: str) -> datetime | None:
+def _parse_date(raw: object) -> datetime | None:
     if not raw:
         return None
     try:
-        ts = raw.strip()
+        ts = str(raw).strip()
         if "." in ts:
             base, frac = ts.rsplit(".", 1)
             ts = f"{base}.{frac[:6]}"
@@ -157,15 +158,27 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
     logger.info("Playback sync: %d new rows from plugin", len(rows))
 
     col = {name: i for i, name in enumerate(columns)}
+    item_col = col.get("ItemId")
+    requested_item_ids = {
+        str(row[item_col]).replace("-", "")
+        for row in rows
+        if item_col is not None and item_col < len(row) and row[item_col]
+    }
 
     async with async_session_factory() as db:
-        # Build jellyfin_id → internal UUID lookup
-        result = await db.execute(select(MediaItem.id, MediaItem.jellyfin_id))
-        id_map: dict[str, object] = {row.jellyfin_id: row.id for row in result}
+        # Build jellyfin_id → MediaItem lookup so imported playbacks can also
+        # trigger the same prefetch path used by live webhooks.
+        result = await db.execute(
+            select(MediaItem).where(MediaItem.jellyfin_id.in_(requested_item_ids))
+        )
+        item_map: dict[str, MediaItem] = {
+            item.jellyfin_id.replace("-", ""): item for item in result.scalars()
+        }
 
         imported = skipped = 0
         newest_ts: datetime | None = None
         batch: list[PlaybackEvent] = []
+        prefetch_items: list[MediaItem] = []
 
         for row in rows:
             jellyfin_id = row[col.get("ItemId", -1)] if "ItemId" in col else None
@@ -179,8 +192,9 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
                 skipped += 1
                 continue
 
-            media_item_id = id_map.get(jellyfin_id)
-            if not media_item_id:
+            normalized_id = jellyfin_id.replace("-", "")
+            item = item_map.get(normalized_id)
+            if not item:
                 skipped += 1
                 continue
 
@@ -189,8 +203,25 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
                 skipped += 1
                 continue
 
+            if tag != _BACKFILL_TAG:
+                existing = await db.execute(
+                    select(PlaybackEvent.id)
+                    .where(
+                        PlaybackEvent.media_item_id == item.id,
+                        PlaybackEvent.user_id == user_id,
+                        PlaybackEvent.event_type == "start",
+                        PlaybackEvent.created_at == created_at,
+                    )
+                    .limit(1)
+                )
+                if existing.scalar_one_or_none():
+                    skipped += 1
+                    if newest_ts is None or created_at > newest_ts:
+                        newest_ts = created_at
+                    continue
+
             batch.append(PlaybackEvent(
-                media_item_id=media_item_id,
+                media_item_id=item.id,
                 user_id=user_id,
                 event_type="start",
                 play_method=None,
@@ -206,6 +237,9 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
             if newest_ts is None or created_at > newest_ts:
                 newest_ts = created_at
 
+            if tag is None and item.item_type == "episode":
+                prefetch_items.append(item)
+
             if len(batch) >= 2000:
                 db.add_all(batch)
                 await db.flush()
@@ -213,6 +247,17 @@ async def sync_playback_from_reporting(full_reimport: bool = False) -> dict:
 
         if batch:
             db.add_all(batch)
+
+        if prefetch_items:
+            from core.prefetcher import prefetch_after_playback_start
+
+            seen_item_ids = set()
+            for item in prefetch_items:
+                if item.id in seen_item_ids:
+                    continue
+                seen_item_ids.add(item.id)
+                await prefetch_after_playback_start(db, item)
+            logger.info("Playback sync: triggered prefetch for %d imported episode start(s)", len(seen_item_ids))
 
         # Advance the cursor to the newest row we just imported
         if newest_ts:
