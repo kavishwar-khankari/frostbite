@@ -50,13 +50,13 @@ const SETTING_META = {
   },
   emergency_freeze_threshold_gb: {
     label: 'Emergency Freeze Threshold',
-    desc: 'When NAS free space drops below this value, emergency freezes are triggered.',
-    min: 0, max: 10000, step: 10, unit: ' GB',
+    desc: 'When NAS free space drops below this GiB value, emergency freezes are triggered.',
+    min: 0, max: 10000, step: 10, unit: ' GiB',
   },
   cold_transfer_min_nas_used_gb: {
     label: 'Cold Transfer NAS Usage Limit',
-    desc: 'Freeze transfers start only when NAS used is at or above this value. Below it, queued cold transfers wait.',
-    min: 0, max: 10000, step: 10, unit: ' GB',
+    desc: 'Freeze transfers start only when NAS used is at or above this GiB value. Below it, queued cold transfers wait.',
+    min: 0, max: 10000, step: 10, unit: ' GiB',
   },
   deletion_threshold: {
     label: 'Deletion Approval Threshold',

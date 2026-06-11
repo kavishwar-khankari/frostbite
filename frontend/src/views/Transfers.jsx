@@ -7,6 +7,7 @@ import {
 } from '../api/client'
 import ColdTransferPauseNotice from '../components/ColdTransferPauseNotice'
 import TransferRow from '../components/TransferRow'
+import { formatBytes } from '../utils/format'
 
 function fmtTime(iso) {
   if (!iso) return '—'
@@ -98,7 +99,6 @@ export default function Transfers() {
   })
   const paused = workerStatus?.paused ?? false
   const coldTransfersPaused = workerStatus?.cold_transfers_paused ?? false
-  const coldTransferPauseReason = workerStatus?.cold_transfer_pause_reason
 
   // Search is now server-side; displayed = transfers
   const displayed = transfers
@@ -322,7 +322,7 @@ export default function Transfers() {
                 className="rounded bg-gray-700 border-gray-600 shrink-0"
               />
               <div className="flex-1 min-w-0">
-                <TransferRow transfer={t} coldTransferPauseReason={coldTransferPauseReason} />
+                <TransferRow transfer={t} workerStatus={workerStatus} />
               </div>
             </div>
             <div className="flex gap-4 pb-2 pl-6 text-xs text-gray-600">
@@ -330,6 +330,7 @@ export default function Transfers() {
               {t.started_at && <span>Started: {fmtTime(t.started_at)}</span>}
               {t.completed_at && <span>Completed: {fmtTime(t.completed_at)}</span>}
               <span className="text-gray-700">priority {t.priority}</span>
+              {t.item_file_size_bytes != null && <span className="text-gray-700">{formatBytes(t.item_file_size_bytes)}</span>}
             </div>
           </div>
         ))}

@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   BarChart, Bar, Cell,
 } from 'recharts'
+import { bytesToGib } from '../utils/format'
 
 function fmtDate(iso) {
   const d = new Date(iso)
@@ -62,8 +63,8 @@ export default function Analytics() {
     hot: h.hot_items,
     cold: h.cold_items,
     avg_temp: parseFloat(h.avg_temperature.toFixed(1)),
-    nas_gb: parseFloat((h.nas_used_bytes / 1e9).toFixed(2)),
-    cloud_gb: parseFloat((h.cloud_used_bytes / 1e9).toFixed(2)),
+    nas_gib: parseFloat((bytesToGib(h.nas_used_bytes) ?? 0).toFixed(2)),
+    cloud_gib: parseFloat((bytesToGib(h.cloud_used_bytes) ?? 0).toFixed(2)),
   }))
 
   return (
@@ -125,7 +126,7 @@ export default function Analytics() {
 
       {/* Storage usage */}
       <div className="card">
-        <div className="text-sm font-medium text-gray-300 mb-4">Storage Usage (GB)</div>
+        <div className="text-sm font-medium text-gray-300 mb-4">Storage Usage History (GiB)</div>
         <ResponsiveContainer width="100%" height={180}>
           <AreaChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
             <defs>
@@ -143,8 +144,8 @@ export default function Analytics() {
             <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} />
             <Tooltip {...CHART_STYLE} />
             <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="nas_gb" stroke="#f97316" fill="url(#nasGrad)" strokeWidth={1.5} name="NAS (GB)" dot={false} />
-            <Area type="monotone" dataKey="cloud_gb" stroke="#38bdf8" fill="url(#cloudGrad)" strokeWidth={1.5} name="Cloud (GB)" dot={false} />
+            <Area type="monotone" dataKey="nas_gib" stroke="#f97316" fill="url(#nasGrad)" strokeWidth={1.5} name="NAS (GiB)" dot={false} />
+            <Area type="monotone" dataKey="cloud_gib" stroke="#38bdf8" fill="url(#cloudGrad)" strokeWidth={1.5} name="Cloud (GiB)" dot={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

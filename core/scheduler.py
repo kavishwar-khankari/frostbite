@@ -9,12 +9,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select, text
 
 from config import settings
-from core.filesystem import nas_free_bytes
+from core.filesystem import bytes_to_gib, nas_free_bytes, stat_storage
+from core.freeze_policy import prefetch_protected_until, queued_transfer_cancel_reason
 from core.tdarr_client import TdarrClient
 from core.playback_import import sync_playback_from_reporting
 from core.transfer_manager import queue_transfer, start_worker, stop_worker
 from models.database import async_session_factory
-from models.tables import MediaItem, ScoreHistory, Transfer
+from models.tables import MediaItem, PlaybackEvent, ScoreHistory, Transfer
 
 logger = logging.getLogger(__name__)
 _scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
@@ -131,6 +132,30 @@ async def scoring_sweep() -> None:
         items = list(result.scalars())
         logger.info("Scoring sweep: %d tdarr-eligible items to score", len(items))
 
+        now = datetime.utcnow()
+        prefetch_cutoff = now - timedelta(hours=settings.prefetch_grace_hours)
+        recent_prefetches = {
+            item.id: item.last_prefetch_at
+            for item in items
+            if item.last_prefetch_at and item.last_prefetch_at > prefetch_cutoff
+        }
+        watched_after_prefetch_ids = set()
+        if recent_prefetches:
+            try:
+                watched_result = await db.execute(
+                    select(PlaybackEvent.media_item_id, PlaybackEvent.created_at).where(
+                        PlaybackEvent.media_item_id.in_(list(recent_prefetches)),
+                        PlaybackEvent.event_type == "start",
+                        PlaybackEvent.created_at > prefetch_cutoff,
+                    )
+                )
+                for media_item_id, created_at in watched_result.all():
+                    last_prefetch_at = recent_prefetches.get(media_item_id)
+                    if last_prefetch_at and created_at > last_prefetch_at:
+                        watched_after_prefetch_ids.add(media_item_id)
+            except Exception as exc:
+                logger.warning("Could not check watched-after-prefetch state; using time grace only: %s", exc)
+
         # Fetch all pending transfers keyed by media_item_id so we can both
         # avoid duplicates AND cancel stale transfers when scores change.
         pending_result = await db.execute(
@@ -169,32 +194,49 @@ async def scoring_sweep() -> None:
             )
             new_temp = calculate_temperature(meta, stats)
             item.temperature = new_temp
-            item.last_scored_at = datetime.utcnow()
+            item.last_scored_at = now
+
+            protected_until = prefetch_protected_until(
+                item.last_prefetch_at,
+                item.id in watched_after_prefetch_ids,
+                now,
+                settings.prefetch_grace_hours,
+            )
+            prefetch_protected = protected_until is not None
 
             existing = pending_by_item.get(item.id, [])
 
             # Cancel stale QUEUED (not active) transfers whose direction no
-            # longer makes sense after rescoring.
+            # longer makes sense after rescoring. Manual/prefetch/emergency
+            # transfers are only cancelled when the item state makes them
+            # impossible/unsafe; score-based cancellation is auto_score only.
             for t in list(existing):
                 if t.status != "queued":
                     continue
-                if t.direction == "freeze" and new_temp >= settings.freeze_threshold:
+                reason = queued_transfer_cancel_reason(
+                    direction=t.direction,
+                    trigger=t.trigger,
+                    item_storage_tier=item.storage_tier,
+                    item_temperature=new_temp,
+                    freeze_threshold=settings.freeze_threshold,
+                    reheat_threshold=settings.reheat_threshold,
+                    upload_blocked=item.upload_blocked,
+                    prefetch_protected=prefetch_protected,
+                )
+                if reason:
                     t.status = "cancelled"
+                    t.error_message = reason
                     existing.remove(t)
                     cancelled_stale += 1
-                elif t.direction == "reheat" and new_temp <= settings.reheat_threshold:
-                    t.status = "cancelled"
-                    existing.remove(t)
-                    cancelled_stale += 1
+                    logger.info("Cancelled queued %s for %s: %s", t.direction, item.title, reason)
 
             # Skip if still has a live pending transfer after cleanup
             if existing:
                 continue
 
-            # Don't auto-freeze items that were recently prefetched — give the user
-            # time to actually watch them before the scorer freezes them back.
-            prefetch_grace = item.last_prefetch_at and item.last_prefetch_at > datetime.utcnow() - timedelta(hours=settings.prefetch_grace_hours)
-            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked and not prefetch_grace:
+            # Don't auto-freeze prefetched items until the user watches them or
+            # the grace expires. Manual/emergency freezes remain explicit overrides.
+            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked and not prefetch_protected:
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
                 pending_by_item[item.id] = [True]  # sentinel — prevents double-queue
                 queued_freeze += 1
@@ -212,9 +254,9 @@ async def scoring_sweep() -> None:
 
 async def check_nas_space() -> None:
     """Trigger emergency freezes if NAS free space drops below threshold."""
-    free_gb = nas_free_bytes() / (1024 ** 3)
-    if free_gb < settings.emergency_freeze_threshold_gb:
-        logger.warning("NAS free space critical: %.1f GB — triggering emergency freezes", free_gb)
+    free_gib = bytes_to_gib(nas_free_bytes()) or 0.0
+    if free_gib < settings.emergency_freeze_threshold_gb:
+        logger.warning("NAS free space critical: %.1f GiB — triggering emergency freezes", free_gib)
         async with async_session_factory() as db:
             result = await db.execute(
                 select(MediaItem)
@@ -289,14 +331,8 @@ async def record_score_snapshot() -> None:
         )
         row = result.one()
 
-        nas_used = 0
-        try:
-            sv = os.statvfs(settings.nas_root)
-            total_bytes = sv.f_blocks * sv.f_frsize
-            free_bytes = sv.f_bavail * sv.f_frsize
-            nas_used = total_bytes - free_bytes
-        except OSError:
-            pass
+        nas_usage = stat_storage(settings.nas_root)
+        nas_used = nas_usage.used_bytes if nas_usage else 0
 
         cloud_used = 0
         try:
@@ -309,7 +345,7 @@ async def record_score_snapshot() -> None:
                 if resp.status_code == 200:
                     data = resp.json()
                     cloud_used = data.get("used", 0) or 0
-                    logger.info("Cloud usage: %.1f GB (raw: %s)", cloud_used / 1e9, data)
+                    logger.info("Cloud usage: %.1f GiB (raw: %s)", bytes_to_gib(cloud_used) or 0.0, data)
                 else:
                     logger.warning(
                         "operations/about returned %d: %s", resp.status_code, resp.text[:200]

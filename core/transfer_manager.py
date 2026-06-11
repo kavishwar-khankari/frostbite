@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routes.ws import broadcast
 from config import settings
-from core.filesystem import nas_used_bytes
+from core.filesystem import bytes_to_gib, gib_to_bytes, nas_used_bytes
+from core.freeze_policy import freeze_start_blocker, reheat_start_blocker
 from models.database import async_session_factory
 from models.tables import MediaItem, Transfer
 
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Background task handle
 _worker_task: asyncio.Task | None = None
 _paused: bool = False
+_last_freeze_blocker: str | None = None
 
 # Only these extensions are allowed to be transferred.
 # Protects against accidentally syncing backup files, configs, etc.
@@ -40,9 +42,21 @@ _MEDIA_EXTENSIONS = frozenset({
 class ColdTransferGateStatus:
     can_start: bool
     paused: bool
-    nas_used_gb: float | None
-    limit_gb: float
+    nas_used_gib: float | None
+    limit_gib: float
     reason: str | None
+    nas_used_bytes: int | None = None
+    limit_bytes: int = 0
+
+    @property
+    def nas_used_gb(self) -> float | None:
+        """Legacy alias. Values are GiB despite the old name."""
+        return self.nas_used_gib
+
+    @property
+    def limit_gb(self) -> float:
+        """Legacy alias. Values are GiB despite the old name."""
+        return self.limit_gib
 
 
 def is_paused() -> bool:
@@ -51,9 +65,10 @@ def is_paused() -> bool:
 
 def cold_transfer_gate_status() -> ColdTransferGateStatus:
     """Return whether freeze transfers may start under the NAS usage rule."""
-    limit_gb = settings.cold_transfer_min_nas_used_gb
-    if limit_gb <= 0:
-        return ColdTransferGateStatus(True, False, None, limit_gb, None)
+    limit_gib = settings.cold_transfer_min_nas_used_gb
+    limit_bytes = gib_to_bytes(limit_gib) if limit_gib > 0 else 0
+    if limit_gib <= 0:
+        return ColdTransferGateStatus(True, False, None, limit_gib, None, None, limit_bytes)
 
     used_bytes = nas_used_bytes()
     if used_bytes is None:
@@ -61,21 +76,109 @@ def cold_transfer_gate_status() -> ColdTransferGateStatus:
             False,
             True,
             None,
-            limit_gb,
+            limit_gib,
             f"Cold transfers are paused because NAS usage could not be read from {settings.nas_root}.",
+            None,
+            limit_bytes,
         )
 
-    used_gb = used_bytes / (1024 ** 3)
-    if used_gb < limit_gb:
+    used_gib = bytes_to_gib(used_bytes) or 0.0
+    if used_gib < limit_gib:
         return ColdTransferGateStatus(
             False,
             True,
-            used_gb,
-            limit_gb,
-            f"Cold transfers are paused because NAS used {used_gb:.1f} GB is below the safe limit of {limit_gb:.1f} GB.",
+            used_gib,
+            limit_gib,
+            f"Cold transfers are paused because NAS used {used_gib:.1f} GiB is below the safe limit of {limit_gib:.1f} GiB.",
+            used_bytes,
+            limit_bytes,
         )
 
-    return ColdTransferGateStatus(True, False, used_gb, limit_gb, None)
+    return ColdTransferGateStatus(True, False, used_gib, limit_gib, None, used_bytes, limit_bytes)
+
+
+async def _direction_counts(db: AsyncSession, status: str) -> dict[str, int]:
+    result = await db.execute(
+        select(Transfer.direction, func.count())
+        .where(Transfer.status == status)
+        .group_by(Transfer.direction)
+    )
+    return {direction: count for direction, count in result.all()}
+
+
+async def worker_status_snapshot(db: AsyncSession, active_counts: dict[str, int] | None = None) -> dict:
+    """Return a live transfer-worker snapshot for dashboard and transfer UI."""
+    active_counts = active_counts or await _direction_counts(db, "active")
+    queued_counts = await _direction_counts(db, "queued")
+    active_freezes = active_counts.get("freeze", 0)
+    active_reheats = active_counts.get("reheat", 0)
+    queued_freezes = queued_counts.get("freeze", 0)
+    queued_reheats = queued_counts.get("reheat", 0)
+    gate = cold_transfer_gate_status()
+    window_active = _freeze_window_active()
+    freeze_blocker, freeze_reason = freeze_start_blocker(
+        paused=_paused,
+        active_freezes=active_freezes,
+        queued_freezes=queued_freezes,
+        max_concurrent_freezes=settings.max_concurrent_freezes,
+        freeze_window_active=window_active,
+        gate_can_start=gate.can_start,
+        gate_reason=gate.reason,
+    )
+    reheat_blocker, reheat_reason = reheat_start_blocker(
+        paused=_paused,
+        active_reheats=active_reheats,
+        queued_reheats=queued_reheats,
+        max_concurrent_reheats=settings.max_concurrent_reheats,
+    )
+
+    return {
+        "paused": _paused,
+        "cold_transfers_paused": gate.paused,
+        "cold_transfers_can_start": gate.can_start,
+        "cold_transfer_pause_reason": gate.reason,
+        "nas_used_gb": gate.nas_used_gb,
+        "cold_transfer_min_nas_used_gb": gate.limit_gb,
+        "nas_used_gib": gate.nas_used_gib,
+        "cold_transfer_min_nas_used_gib": gate.limit_gib,
+        "nas_used_bytes": gate.nas_used_bytes,
+        "cold_transfer_min_nas_used_bytes": gate.limit_bytes,
+        "freeze_window_active": window_active,
+        "freeze_window_start": settings.freeze_window_start,
+        "freeze_window_end": settings.freeze_window_end,
+        "active_freezes": active_freezes,
+        "active_reheats": active_reheats,
+        "queued_freezes": queued_freezes,
+        "queued_reheats": queued_reheats,
+        "max_concurrent_freezes": settings.max_concurrent_freezes,
+        "max_concurrent_reheats": settings.max_concurrent_reheats,
+        "freeze_start_blocker": freeze_blocker,
+        "freeze_start_blocker_reason": freeze_reason,
+        "reheat_start_blocker": reheat_blocker,
+        "reheat_start_blocker_reason": reheat_reason,
+    }
+
+
+def _log_freeze_blocker_if_changed(status: dict) -> None:
+    global _last_freeze_blocker
+    blocker = status.get("freeze_start_blocker")
+    queued = status.get("queued_freezes") or 0
+    if queued <= 0 or blocker in (None, "none", "no_queued_freezes"):
+        _last_freeze_blocker = None
+        return
+    if blocker == _last_freeze_blocker:
+        return
+    _last_freeze_blocker = blocker
+    logger.info(
+        "Freeze queue blocked: %s queued=%s active=%s/%s nas_used=%.1fGiB limit=%.1fGiB reason=%s",
+        blocker,
+        queued,
+        status.get("active_freezes") or 0,
+        status.get("max_concurrent_freezes") or 0,
+        status.get("nas_used_gib") or 0.0,
+        status.get("cold_transfer_min_nas_used_gib") or 0.0,
+        status.get("freeze_start_blocker_reason") or "none",
+    )
 
 
 class TransferManager:
@@ -215,14 +318,13 @@ async def _process_queue() -> None:
 
         # Pick next queued transfer (skip if globally paused).
         # Read limits from settings so UI changes take effect immediately.
+        status = await worker_status_snapshot(db, {"freeze": active_freezes, "reheat": active_reheats})
+        _log_freeze_blocker_if_changed(status)
         if not _paused:
             if active_reheats < settings.max_concurrent_reheats:
                 await _start_next(db, "reheat")
-            if active_freezes < settings.max_concurrent_freezes:
-                if _freeze_window_active():
-                    gate = cold_transfer_gate_status()
-                    if gate.can_start:
-                        await _start_next(db, "freeze")
+            if status["freeze_start_blocker"] == "none":
+                await _start_next(db, "freeze")
 
         await db.commit()
 
@@ -298,6 +400,7 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
                 deleted = await _delete_nas_copy(rel_path)
                 if not deleted:
                     logger.warning("Cloud copy verified for %s but could not delete NAS copy", item.title)
+            await _refresh_vfs_cache(rel_path)
             transfer.status = "completed"
             transfer.completed_at = datetime.utcnow()
             transfer.error_message = "Already on cloud — skipped upload"
@@ -340,7 +443,14 @@ async def _execute_transfer(db: AsyncSession, transfer: Transfer) -> None:
         item.storage_tier = "transferring"
         item.transfer_direction = transfer.direction
 
-        logger.info("Started %s for %s (job=%s)", transfer.direction, item.title, transfer.rclone_job_id)
+        logger.info(
+            "Started %s for %s (job=%s trigger=%s priority=%s)",
+            transfer.direction,
+            item.title,
+            transfer.rclone_job_id,
+            transfer.trigger,
+            transfer.priority,
+        )
         await broadcast({"type": "transfer_start", "transfer_id": str(transfer.id), "title": item.title})
 
     except Exception as exc:
@@ -571,6 +681,30 @@ async def _delete_nas_copy(file_path: str) -> bool:
         return False
 
 
+async def _refresh_vfs_cache(rel_path: str) -> None:
+    """Force every node's rclone mount to discover the latest cloud state."""
+    parts = rel_path.split("/")
+    parent_dir = "/".join(parts[:-1])        # e.g. series/anime/Show/Season 4
+    grandparent_dir = "/".join(parts[:-2])   # e.g. series/anime/Show
+
+    vfs_urls = [u.strip() for u in settings.rclone_vfs_urls.split(",") if u.strip()]
+    async with httpx.AsyncClient(timeout=10) as client:
+        for vfs_url in vfs_urls:
+            try:
+                # Forget the file first in case this node cached a stale or negative lookup.
+                await client.post(f"{vfs_url}/vfs/forget", json={"file": rel_path})
+                resp = await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
+                body = resp.json()
+                # If rclone doesn't have a cache entry for this dir, refresh the
+                # grandparent first so it discovers the season directory, then retry.
+                if any("does not exist" in str(v) for v in body.get("result", {}).values()):
+                    logger.debug("VFS refresh: %s not cached on %s, refreshing grandparent", parent_dir, vfs_url)
+                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": grandparent_dir})
+                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
+            except Exception as exc:
+                logger.warning("VFS cache refresh failed for %s on %s: %s", rel_path, vfs_url, exc)
+
+
 async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
     item_result = await db.execute(select(MediaItem).where(MediaItem.id == transfer.media_item_id))
     item = item_result.scalar_one()
@@ -613,29 +747,7 @@ async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
     item.storage_tier = new_tier
     item.transfer_direction = None
 
-    # Invalidate rclone VFS cache on ALL nodes that mount the cloud remote.
-    # vfs/refresh only works on directories already in the VFS cache. If the
-    # immediate parent hasn't been listed yet, rclone returns HTTP 200 with
-    # {"result": {"dir": "file does not exist"}}. In that case we walk up to
-    # the grandparent (series dir) which is always cached, then retry.
-    parts = transfer.dest_path.split("/")
-    parent_dir = "/".join(parts[:-1])        # e.g. series/anime/Show/Season 4
-    grandparent_dir = "/".join(parts[:-2])   # e.g. series/anime/Show
-
-    vfs_urls = [u.strip() for u in settings.rclone_vfs_urls.split(",") if u.strip()]
-    async with httpx.AsyncClient(timeout=10) as client:
-        for vfs_url in vfs_urls:
-            try:
-                resp = await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
-                body = resp.json()
-                # If rclone doesn't have a cache entry for this dir, refresh the
-                # grandparent first so it discovers the season directory, then retry.
-                if any("does not exist" in str(v) for v in body.get("result", {}).values()):
-                    logger.debug("VFS refresh: %s not cached on %s, refreshing grandparent", parent_dir, vfs_url)
-                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": grandparent_dir})
-                    await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
-            except Exception as exc:
-                logger.warning("VFS cache refresh failed for %s: %s", vfs_url, exc)
+    await _refresh_vfs_cache(transfer.dest_path)
 
     logger.info("Transfer complete: %s is now %s", item.title, new_tier)
     await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title, "tier": new_tier})

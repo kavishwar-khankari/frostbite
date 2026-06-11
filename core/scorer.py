@@ -55,7 +55,7 @@ def calculate_temperature_with_breakdown(
       5. Newness boost        — 30 pts  (full for 7 days, linear decay to 0 at 30 days)
       6. Series status        —  5 pts  (continuing series)
       7. Community rating     —  5 pts  (0–10 scale)
-      8. Size penalty         —  -5 pts (files > 5 GB)
+      8. Size penalty         —  -5 pts (files > 5 GiB)
     """
     now = datetime.utcnow()
     b: dict[str, float] = {}

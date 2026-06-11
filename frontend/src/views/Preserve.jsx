@@ -5,13 +5,7 @@ import {
   protectCandidateItem, protectCandidateSeries,
   getDeletionExceptions, getDeletionStats, removeDeletionException,
 } from '../api/client'
-
-function fmtSize(b) {
-  if (!b) return '—'
-  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
-  if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
-  return `${(b / 1e3).toFixed(0)} KB`
-}
+import { formatBytes } from '../utils/format'
 
 function fmtDate(iso) {
   if (!iso) return '—'
@@ -45,7 +39,7 @@ function CandidateRow({ c, onApprove, onProtectItem, onProtectSeries, isMutating
           c.temperature <= 1 ? 'text-red-400' : c.temperature <= 3 ? 'text-yellow-400' : 'text-gray-300'
         }`}>{c.temperature.toFixed(1)}</span>
       </td>
-      <td className="px-4 py-2 text-right text-xs text-gray-400 tabular-nums">{fmtSize(c.file_size_bytes)}</td>
+      <td className="px-4 py-2 text-right text-xs text-gray-400 tabular-nums">{formatBytes(c.file_size_bytes, 2)}</td>
       <td className="px-4 py-2 text-right text-xs text-gray-500">{fmtDate(c.created_at)}</td>
       <td className="px-4 py-2 text-right w-48">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -90,7 +84,7 @@ function SeriesGroup({ seriesId, seriesName, candidates, onApprove, onProtectIte
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0">
-            <span className="text-xs text-gray-500 w-16 text-right tabular-nums">{fmtSize(totalSize)}</span>
+            <span className="text-xs text-gray-500 w-16 text-right tabular-nums">{formatBytes(totalSize)}</span>
           </div>
         </div>
         <div className="flex gap-1 pr-3 opacity-0 group-hover/series:opacity-100 transition-opacity shrink-0">
@@ -262,7 +256,7 @@ export default function Preserve() {
   const handleDeleteAll = (candidates) => {
     const totalSize = candidates.reduce((s, c) => s + c.file_size_bytes, 0)
     if (!window.confirm(
-      `Delete ${candidates.length} episodes from cloud storage? Total: ${fmtSize(totalSize)}. This cannot be undone by Frostbite.`
+      `Delete ${candidates.length} episodes from cloud storage? Total: ${formatBytes(totalSize)}. This cannot be undone by Frostbite.`
     )) return
     for (const c of candidates) approveMut.mutate(c.id)
   }
@@ -441,7 +435,7 @@ export default function Preserve() {
                       c.temperature <= 1 ? 'text-red-400' : c.temperature <= 3 ? 'text-yellow-400' : 'text-gray-300'
                     }`}>{c.temperature.toFixed(1)}</span>
                   </td>
-                  <td className="px-4 py-2.5 text-right text-xs text-gray-400 tabular-nums">{fmtSize(c.file_size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-right text-xs text-gray-400 tabular-nums">{formatBytes(c.file_size_bytes, 2)}</td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
                       c.status === 'deleted' ? 'bg-red-950/50 text-red-300 border border-red-900/60' :

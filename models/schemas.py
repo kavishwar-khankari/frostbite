@@ -21,6 +21,9 @@ class MediaItemResponse(BaseModel):
     transfer_direction: str | None
     temperature: float
     last_scored_at: datetime | None
+    last_prefetch_at: datetime | None = None
+    prefetch_protected: bool = False
+    prefetch_protected_until: datetime | None = None
     date_added: datetime | None
     tdarr_eligible: bool
     tdarr_status: str | None
@@ -66,11 +69,18 @@ class TransferResponse(BaseModel):
     item_series_name: str | None = None
     item_season_number: int | None = None
     item_type: str | None = None
+    item_file_size_bytes: int | None = None
+    item_temperature: float | None = None
+    item_storage_tier: str | None = None
+    item_upload_blocked: bool | None = None
+    item_last_prefetch_at: datetime | None = None
+    item_prefetch_protected: bool = False
+    item_prefetch_protected_until: datetime | None = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_orm_with_item(cls, t, item) -> "TransferResponse":
+    def from_orm_with_item(cls, t, item, prefetch_protected_until: datetime | None = None) -> "TransferResponse":
         d = {
             "id": t.id,
             "media_item_id": t.media_item_id,
@@ -92,6 +102,13 @@ class TransferResponse(BaseModel):
             d["item_series_name"] = item.series_name
             d["item_season_number"] = item.season_number
             d["item_type"] = item.item_type
+            d["item_file_size_bytes"] = item.file_size_bytes
+            d["item_temperature"] = item.temperature
+            d["item_storage_tier"] = item.storage_tier
+            d["item_upload_blocked"] = item.upload_blocked
+            d["item_last_prefetch_at"] = item.last_prefetch_at
+            d["item_prefetch_protected_until"] = prefetch_protected_until
+            d["item_prefetch_protected"] = prefetch_protected_until is not None
         return cls(**d)
 
 
@@ -115,10 +132,17 @@ class DashboardStats(BaseModel):
     cold_items: int
     transferring_items: int
     avg_temperature: float
+    nas_used_bytes: int | None = None
+    nas_total_bytes: int | None = None
+    nas_available_bytes: int | None = None
+    cloud_used_bytes: int | None = None
+    storage_checked_at: datetime | None = None
+    cloud_usage_source: str | None = None
     nas_free_gb: float
     active_transfers: list[TransferResponse]
     queued_transfers: int
     queued_transfer_list: list[TransferResponse] = []
+    queued_freeze_list: list[TransferResponse] = []
     tdarr_eligible_count: int = 0
 
 

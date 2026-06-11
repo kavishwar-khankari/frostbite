@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from api.deps import DBSession
+from core.prefetch_state import prefetch_protection_map
 from core.transfer_manager import stop_rclone_job
 from models.schemas import TransferPage, TransferResponse
 from models.tables import MediaItem, Transfer
@@ -15,9 +16,10 @@ router = APIRouter()
 _WITH_ITEM = joinedload(Transfer.media_item)
 
 
-def _resp(transfer: Transfer) -> TransferResponse:
+def _resp(transfer: Transfer, prefetch_map: dict | None = None) -> TransferResponse:
     item = transfer.media_item if transfer.media_item else None
-    return TransferResponse.from_orm_with_item(transfer, item)
+    protected_until = prefetch_map.get(transfer.media_item_id) if prefetch_map else None
+    return TransferResponse.from_orm_with_item(transfer, item, protected_until)
 
 
 @router.get("/transfers", response_model=TransferPage)
@@ -64,7 +66,9 @@ async def list_transfers(
     items_q = items_q.limit(limit).offset(offset)
 
     result = await db.execute(items_q)
-    items = [_resp(t) for t in result.scalars().unique().all()]
+    transfers = list(result.scalars().unique().all())
+    prefetch_map = await prefetch_protection_map(db, [t.media_item for t in transfers if t.media_item])
+    items = [_resp(t, prefetch_map) for t in transfers]
 
     return TransferPage(items=items, total=total, limit=limit, offset=offset)
 
@@ -77,7 +81,8 @@ async def get_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferRespons
     transfer = result.scalar_one_or_none()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
-    return _resp(transfer)
+    prefetch_map = await prefetch_protection_map(db, [transfer.media_item] if transfer.media_item else [])
+    return _resp(transfer, prefetch_map)
 
 
 @router.post("/transfers/{transfer_id}/cancel", response_model=TransferResponse)
@@ -99,7 +104,8 @@ async def cancel_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferResp
 
     await db.commit()
     await db.refresh(transfer)
-    return _resp(transfer)
+    prefetch_map = await prefetch_protection_map(db, [transfer.media_item] if transfer.media_item else [])
+    return _resp(transfer, prefetch_map)
 
 
 class BulkIdsRequest(BaseModel):
@@ -211,4 +217,6 @@ async def retry_transfer(transfer_id: uuid.UUID, db: DBSession) -> TransferRespo
     reload = await db.execute(
         select(Transfer).options(_WITH_ITEM).where(Transfer.id == new_transfer.id)
     )
-    return _resp(reload.scalar_one())
+    reloaded = reload.scalar_one()
+    prefetch_map = await prefetch_protection_map(db, [reloaded.media_item] if reloaded.media_item else [])
+    return _resp(reloaded, prefetch_map)

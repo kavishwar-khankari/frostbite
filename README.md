@@ -56,7 +56,7 @@ Files only enter the freeze cycle after [Tdarr](https://tdarr.io) has finished e
 | Newness | 30 | Full points for first 7 days, linear decay to 0 at day 30 |
 | Series status | 5 | Bonus for continuing/airing series |
 | Community rating | 5 | Jellyfin community rating (0–10 scale) |
-| Size penalty | −5 | Files over 5 GB get penalized |
+| Size penalty | −5 | Files over 5 GiB get penalized |
 
 ## Architecture
 
@@ -136,7 +136,10 @@ Runtime-adjustable thresholds (editable via dashboard):
 | `MAX_CONCURRENT_FREEZES` | 2 |
 | `FREEZE_WINDOW_START` | 00:00 IST |
 | `FREEZE_WINDOW_END` | 08:00 IST |
-| `EMERGENCY_FREEZE_THRESHOLD_GB` | 15 GB |
+| `EMERGENCY_FREEZE_THRESHOLD_GB` | 15 GiB |
+| `COLD_TRANSFER_MIN_NAS_USED_GB` | 3000 GiB |
+
+Storage threshold setting names still use the legacy `_GB` suffix, but Frostbite interprets them as GiB and displays them as GiB in the dashboard.
 
 ## Deployment
 

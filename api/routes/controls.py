@@ -5,9 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import DBSession
-from sqlalchemy import select
 
-from core.transfer_manager import cold_transfer_gate_status, is_paused, pause_all_transfers, queue_transfer, resume_transfers
+from core.transfer_manager import pause_all_transfers, queue_transfer, resume_transfers, worker_status_snapshot
 from models.tables import Transfer
 from models.schemas import ManualTransferRequest, TransferResponse
 from models.tables import MediaItem
@@ -60,16 +59,8 @@ async def resume() -> dict:
 
 
 @router.get("/transfers/worker-status")
-async def worker_status() -> dict:
-    gate = cold_transfer_gate_status()
-    return {
-        "paused": is_paused(),
-        "cold_transfers_paused": gate.paused,
-        "cold_transfers_can_start": gate.can_start,
-        "cold_transfer_pause_reason": gate.reason,
-        "nas_used_gb": gate.nas_used_gb,
-        "cold_transfer_min_nas_used_gb": gate.limit_gb,
-    }
+async def worker_status(db: DBSession) -> dict:
+    return await worker_status_snapshot(db)
 
 
 class SeriesActionRequest(BaseModel):
@@ -102,8 +93,12 @@ async def _series_action(body: SeriesActionRequest, direction: str, db: DBSessio
         if item.id in pending_ids:
             skipped += 1
             continue
-        await queue_transfer(db, item.id, direction, "manual", priority=90)
-        queued += 1
+        transfer = await queue_transfer(db, item.id, direction, "manual", priority=90)
+        if transfer:
+            queued += 1
+            pending_ids.add(item.id)
+        else:
+            skipped += 1
     await db.commit()
     return {"queued": queued, "skipped": skipped}
 
@@ -199,8 +194,11 @@ async def _bulk_action(ids: list[str], direction: str, db: DBSession) -> BulkAct
             if item.storage_tier == already_tier:
                 skipped += 1
                 continue
-            await queue_transfer(db=db, media_item_id=item.id, direction=direction, trigger="manual", priority=90)
-            queued += 1
+            transfer = await queue_transfer(db=db, media_item_id=item.id, direction=direction, trigger="manual", priority=90)
+            if transfer:
+                queued += 1
+            else:
+                skipped += 1
         except Exception as exc:
             errors.append(f"{jid}: {exc}")
     return BulkActionResponse(queued=queued, skipped=skipped, errors=errors)

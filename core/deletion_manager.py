@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routes.ws import broadcast
 from config import settings
+from core.filesystem import bytes_to_gib
 from models.database import async_session_factory
 from models.tables import (
     DeletionCandidate,
@@ -108,8 +109,8 @@ async def _send_deletion_notification(candidate_data: list[dict]) -> None:
         name = d["title"]
         if d.get("season_number") is not None and d.get("episode_number") is not None:
             name = f"{d['series_name'] or d['series_id']} S{d['season_number']:02d}E{d['episode_number']:02d}"
-        size_gb = d["file_size_bytes"] / 1e9
-        lines.append(f"- {name} — temp {d['temperature']} — {size_gb:.1f} GB")
+        size_gib = bytes_to_gib(d["file_size_bytes"]) or 0.0
+        lines.append(f"- {name} — temp {d['temperature']} — {size_gib:.1f} GiB")
 
     if len(candidate_data) > 10:
         lines.append(f"... and {len(candidate_data) - 10} more")

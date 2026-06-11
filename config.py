@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     freeze_window_end: int = 8     # Hour (IST)
 
     # Space management
+    # Legacy "gb" names are interpreted as GiB throughout the app.
     emergency_freeze_threshold_gb: float = 15.0
     cold_transfer_min_nas_used_gb: float = 3000.0
 

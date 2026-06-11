@@ -1,11 +1,11 @@
 import uuid
-
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from api.deps import DBSession
 from core.deletion_manager import get_item_protection
+from core.prefetch_state import prefetch_protection_map
 from models.schemas import MediaItemResponse
 from models.tables import MediaItem, DeletionException
 
@@ -92,9 +92,14 @@ async def list_items(
                 e.series_id: e for e in s_exc_result.scalars() if e.series_id
             }
 
+        prefetch_map = await prefetch_protection_map(db, items)
+
         enriched = []
         for item in items:
             resp = MediaItemResponse.model_validate(item)
+            protected_until = prefetch_map.get(item.id)
+            resp.prefetch_protected_until = protected_until
+            resp.prefetch_protected = protected_until is not None
             if item.jellyfin_id in item_exceptions:
                 exc = item_exceptions[item.jellyfin_id]
                 resp.deletion_protected = True

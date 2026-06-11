@@ -18,7 +18,7 @@ from config import settings
 from core.transfer_manager import queue_transfer
 from models.database import async_session_factory
 from models.schemas import PlaybackEventIn
-from models.tables import MediaItem, PlaybackEvent
+from models.tables import MediaItem, PlaybackEvent, Transfer
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,24 @@ async def _boost_temperature(db: AsyncSession, item: MediaItem, boost: float) ->
     item.last_scored_at = datetime.utcnow()
 
 
+async def _cancel_queued_auto_freeze(db: AsyncSession, item: MediaItem) -> None:
+    result = await db.execute(
+        select(Transfer).where(
+            Transfer.media_item_id == item.id,
+            Transfer.direction == "freeze",
+            Transfer.trigger == "auto_score",
+            Transfer.status == "queued",
+        )
+    )
+    cancelled = 0
+    for transfer in result.scalars():
+        transfer.status = "cancelled"
+        transfer.error_message = "Cancelled because item was prefetched"
+        cancelled += 1
+    if cancelled:
+        logger.info("Prefetch cancelled %d queued auto-freeze(s) for %s", cancelled, item.title)
+
+
 async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
     if not item.series_id or item.episode_number is None:
         return
@@ -114,9 +132,11 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
         if not recently_prefetched:
             await _boost_temperature(db, ep, settings.prefetch_boost)
             ep.last_prefetch_at = now
+            await _cancel_queued_auto_freeze(db, ep)
         if ep.storage_tier == "cold":
             priority = 90 - (i * 10)
             ep.last_prefetch_at = now
+            await _cancel_queued_auto_freeze(db, ep)
             await queue_transfer(db, ep.id, direction="reheat", trigger="prefetch", priority=priority)
 
     # Season boundary look-ahead
@@ -139,6 +159,7 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
         if premiere and premiere.storage_tier == "cold":
             if not premiere.last_prefetch_at or premiere.last_prefetch_at <= cooldown_cutoff:
                 premiere.last_prefetch_at = now
+                await _cancel_queued_auto_freeze(db, premiere)
                 await queue_transfer(db, premiere.id, direction="reheat", trigger="prefetch", priority=75)
 
 

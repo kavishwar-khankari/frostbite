@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getItems, getSeries, bulkFreeze, bulkReheat, manualFreeze, manualReheat, overrideTemperature, getScoreBreakdown, freezeSeries, reheatSeries, protectItem, protectItems, protectSeries, removeDeletionException } from '../api/client'
 import TierBadge from '../components/TierBadge'
 import TemperatureBar from '../components/TemperatureBar'
+import { formatBytes, formatDateTime } from '../utils/format'
 
 // ── Score breakdown tooltip ──────────────────────────────────────────────────
 const FACTOR_ORDER = [
@@ -94,16 +95,22 @@ function ScoreBreakdownTooltip({ jellyfin_id, temperature }) {
   )
 }
 
-function fmtSize(b) {
-  if (!b) return '—'
-  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
-  if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
-  return `${(b / 1e3).toFixed(0)} KB`
-}
-
 function fmtDate(iso) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function PrefetchHoldBadge({ item }) {
+  if (!item.prefetch_protected) return null
+  const until = formatDateTime(item.prefetch_protected_until)
+  return (
+    <span
+      className="ml-2 rounded border border-cyan-400/20 bg-cyan-950/30 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cyan-300/90"
+      title={`Auto-freeze is held until this item is watched or until ${until}. Manual freeze still overrides this hold.`}
+    >
+      prefetch hold
+    </span>
+  )
 }
 
 function TdarrBadge({ eligible, status }) {
@@ -156,7 +163,10 @@ function ItemRow({ item, selected, onSelect }) {
         />
       </td>
       <td className="px-3 py-2.5 max-w-xs">
-        <div className="font-medium text-sm text-white truncate">{item.title}</div>
+        <div className="font-medium text-sm text-white truncate">
+          {item.title}
+          <PrefetchHoldBadge item={item} />
+        </div>
         <div className="text-xs text-gray-600 truncate">{item.file_path}</div>
         {item.deletion_protected && (
           <span className={`text-xs ${item.deletion_protection_scope === 'series' ? 'text-emerald-500/70' : 'text-emerald-400/60'}`}
@@ -198,7 +208,7 @@ function ItemRow({ item, selected, onSelect }) {
       <td className="px-3 py-2.5 text-center">
         <TdarrBadge eligible={item.tdarr_eligible} status={item.tdarr_status} />
       </td>
-      <td className="px-3 py-2.5 text-xs text-gray-400 text-right tabular-nums">{fmtSize(item.file_size_bytes)}</td>
+      <td className="px-3 py-2.5 text-xs text-gray-400 text-right tabular-nums">{formatBytes(item.file_size_bytes, 2)}</td>
       <td className="px-3 py-2.5 text-xs text-gray-500 text-right">{fmtDate(item.date_added)}</td>
       <td className="px-3 py-2.5 text-right w-20">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -263,7 +273,7 @@ function SeasonRow({ season, seriesId, episodes }) {
           {season.cold_count > 0 && <span className="text-xs text-frost-400">❄️ {season.cold_count}</span>}
           <div className="ml-auto flex items-center gap-4">
             <div className="w-20"><TemperatureBar value={season.avg_temperature} showLabel /></div>
-            <span className="text-xs text-gray-500 w-16 text-right">{(season.total_size_bytes / 1e9).toFixed(1)} GB</span>
+            <span className="text-xs text-gray-500 w-16 text-right">{formatBytes(season.total_size_bytes)}</span>
           </div>
         </button>
         {/* Season-level actions */}
@@ -359,7 +369,7 @@ function SeriesCard({ series }) {
           <div className="flex items-center gap-4 shrink-0">
             {isFetching && <span className="text-xs text-gray-600 animate-pulse">Loading…</span>}
             <div className="w-24"><TemperatureBar value={series.avg_temperature} showLabel /></div>
-            <span className="text-xs text-gray-500 w-20 text-right">{(series.total_size_bytes / 1e9).toFixed(1)} GB</span>
+            <span className="text-xs text-gray-500 w-20 text-right">{formatBytes(series.total_size_bytes)}</span>
           </div>
         </div>
         {/* Series-level actions */}
