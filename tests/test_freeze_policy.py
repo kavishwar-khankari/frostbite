@@ -12,10 +12,23 @@ def test_prefetch_protection_expires_or_clears_when_watched():
     now = datetime(2026, 6, 12, 12, 0, 0)
     last_prefetch = now - timedelta(hours=4)
 
-    assert prefetch_protected_until(last_prefetch, False, now, 12) == last_prefetch + timedelta(hours=12)
-    assert prefetch_protected_until(last_prefetch, True, now, 12) is None
-    assert prefetch_protected_until(now - timedelta(hours=13), False, now, 12) is None
-    assert prefetch_protected_until(None, False, now, 12) is None
+    assert prefetch_protected_until(
+        last_prefetch,
+        False,
+        now,
+        12,
+        item_storage_tier="hot",
+    ) == last_prefetch + timedelta(hours=12)
+    assert prefetch_protected_until(last_prefetch, True, now, 12, item_storage_tier="hot") is None
+    assert prefetch_protected_until(now - timedelta(hours=13), False, now, 12, item_storage_tier="hot") is None
+    assert prefetch_protected_until(None, False, now, 12, item_storage_tier="hot") is None
+
+
+def test_prefetch_protection_only_applies_to_hot_items():
+    now = datetime(2026, 6, 12, 12, 0, 0)
+    last_prefetch = now - timedelta(hours=4)
+
+    assert prefetch_protected_until(last_prefetch, False, now, 12, item_storage_tier="cold") is None
 
 
 def test_auto_freeze_cancelled_for_prefetch_but_manual_freeze_is_kept():

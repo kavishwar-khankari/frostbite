@@ -8,9 +8,13 @@ def prefetch_protected_until(
     watched_after_prefetch: bool,
     now: datetime,
     grace_hours: int,
+    *,
+    item_storage_tier: str,
 ) -> datetime | None:
     """Return the protection expiry if an item should not auto-freeze yet."""
     if not last_prefetch_at or watched_after_prefetch:
+        return None
+    if item_storage_tier != "hot":
         return None
 
     protected_until = last_prefetch_at + timedelta(hours=grace_hours)
@@ -22,8 +26,16 @@ def is_prefetch_protected(
     watched_after_prefetch: bool,
     now: datetime,
     grace_hours: int,
+    *,
+    item_storage_tier: str,
 ) -> bool:
-    return prefetch_protected_until(last_prefetch_at, watched_after_prefetch, now, grace_hours) is not None
+    return prefetch_protected_until(
+        last_prefetch_at,
+        watched_after_prefetch,
+        now,
+        grace_hours,
+        item_storage_tier=item_storage_tier,
+    ) is not None
 
 
 def queued_transfer_cancel_reason(

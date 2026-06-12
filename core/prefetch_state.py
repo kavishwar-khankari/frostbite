@@ -26,9 +26,10 @@ async def prefetch_protection_map(
     """
     now = now or datetime.utcnow()
     prefetch_cutoff = now - timedelta(hours=settings.prefetch_grace_hours)
+    hot_items = [item for item in items if item and item.storage_tier == "hot"]
     recent_prefetches = {
         item.id: item.last_prefetch_at
-        for item in items
+        for item in hot_items
         if item and item.last_prefetch_at and item.last_prefetch_at > prefetch_cutoff
     }
     watched_after_prefetch_ids: set[uuid.UUID] = set()
@@ -55,6 +56,7 @@ async def prefetch_protection_map(
             item.id in watched_after_prefetch_ids,
             now,
             settings.prefetch_grace_hours,
+            item_storage_tier=item.storage_tier,
         )
         for item in items
         if item
