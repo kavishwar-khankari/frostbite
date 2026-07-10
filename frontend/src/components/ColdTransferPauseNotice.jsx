@@ -15,7 +15,6 @@ function blockerLabel(status) {
 export default function ColdTransferPauseNotice({ status }) {
   if (!status) return null
   const queuedFreezes = status.queued_freezes ?? 0
-  if (queuedFreezes <= 0 && !status.cold_transfers_paused) return null
 
   const blocker = status.freeze_start_blocker
   const blocked = queuedFreezes > 0 && blocker && !['none', 'no_queued_freezes'].includes(blocker)

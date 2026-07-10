@@ -143,6 +143,8 @@ class DashboardStats(BaseModel):
     queued_transfers: int
     queued_transfer_list: list[TransferResponse] = []
     queued_freeze_list: list[TransferResponse] = []
+    freeze_candidate_count: int = 0
+    upload_blocked_freeze_candidates: int = 0
     tdarr_eligible_count: int = 0
 
 

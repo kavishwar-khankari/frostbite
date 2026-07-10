@@ -106,6 +106,18 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
     }.values())
     prefetch_map = await prefetch_protection_map(db, transfer_items)
 
+    freeze_candidate_result = await db.execute(
+        select(
+            func.count().label("total"),
+            func.sum(case((MediaItem.upload_blocked == True, 1), else_=0)).label("upload_blocked"),  # noqa: E712
+        ).where(
+            MediaItem.storage_tier == "hot",
+            MediaItem.tdarr_eligible == True,  # noqa: E712
+            MediaItem.temperature < settings.freeze_threshold,
+        )
+    )
+    freeze_candidates = freeze_candidate_result.one()
+
     # Tdarr-eligible count
     tdarr_result = await db.execute(
         select(func.count()).where(MediaItem.tdarr_eligible == True)  # noqa: E712
@@ -143,5 +155,7 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
             TransferResponse.from_orm_with_item(t, t.media_item, prefetch_map.get(t.media_item_id))
             for t in freezes
         ],
+        freeze_candidate_count=freeze_candidates.total or 0,
+        upload_blocked_freeze_candidates=freeze_candidates.upload_blocked or 0,
         tdarr_eligible_count=tdarr_eligible_count,
     )

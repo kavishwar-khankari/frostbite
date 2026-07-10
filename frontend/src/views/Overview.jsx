@@ -30,34 +30,42 @@ function freezeWaitReason(status) {
   return 'queued'
 }
 
-function NextFreezeOrder({ transfers = [], workerStatus }) {
-  if (!transfers.length) return null
+function NextFreezeOrder({ transfers = [], workerStatus, candidateCount = 0, uploadBlockedCount = 0 }) {
   const wait = freezeWaitReason(workerStatus)
+  const emptyMessage = uploadBlockedCount > 0
+    ? `${candidateCount} freeze candidate${candidateCount === 1 ? '' : 's'} below the temperature threshold; ${uploadBlockedCount} blocked because the filename exceeds OpenDrive's 120-character safe limit.`
+    : 'No freeze candidates are currently queued.'
   return (
     <div className="card overflow-hidden">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-sm font-medium text-gray-300">Next Freeze Order</div>
+          <div className="text-sm font-medium text-gray-300">Upcoming Freezes</div>
           <div className="text-xs text-gray-600">Actual queue order: priority, then queued time</div>
         </div>
         <span className="rounded border border-frost-500/20 bg-frost-900/20 px-2 py-1 text-xs text-frost-300">
           {wait}
         </span>
       </div>
-      <div className="divide-y divide-gray-800/60">
-        {transfers.slice(0, 10).map((t, i) => (
-          <div key={t.id} className="grid grid-cols-[2rem_1fr_auto_auto_auto] items-center gap-3 py-2 text-sm">
-            <div className="font-mono text-xs text-gray-600">#{i + 1}</div>
-            <div className="min-w-0">
-              <div className="truncate text-gray-200">{t.item_title ?? t.id}</div>
-              {t.item_series_name && <div className="truncate text-xs text-gray-600">{t.item_series_name}</div>}
+      {transfers.length > 0 ? (
+        <div className="divide-y divide-gray-800/60">
+          {transfers.slice(0, 10).map((t, i) => (
+            <div key={t.id} className="grid grid-cols-[2rem_1fr_auto_auto_auto] items-center gap-3 py-2 text-sm">
+              <div className="font-mono text-xs text-gray-600">#{i + 1}</div>
+              <div className="min-w-0">
+                <div className="truncate text-gray-200">{t.item_title ?? t.id}</div>
+                {t.item_series_name && <div className="truncate text-xs text-gray-600">{t.item_series_name}</div>}
+              </div>
+              <div className="text-right font-mono text-xs text-cyan-300">{t.item_temperature?.toFixed(1) ?? '—'}°</div>
+              <div className="text-right font-mono text-xs text-gray-500">p{t.priority}</div>
+              <div className="text-right text-xs text-gray-500">{formatBytes(t.item_file_size_bytes, 1)}</div>
             </div>
-            <div className="text-right font-mono text-xs text-cyan-300">{t.item_temperature?.toFixed(1) ?? '—'}°</div>
-            <div className="text-right font-mono text-xs text-gray-500">p{t.priority}</div>
-            <div className="text-right text-xs text-gray-500">{formatBytes(t.item_file_size_bytes, 1)}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className={`rounded-md border px-3 py-3 text-sm ${uploadBlockedCount > 0 ? 'border-amber-500/20 bg-amber-950/20 text-amber-200/80' : 'border-gray-800 bg-gray-950/30 text-gray-500'}`}>
+          {emptyMessage}
+        </div>
+      )}
     </div>
   )
 }
@@ -290,7 +298,12 @@ export default function Overview() {
       )}
 
       <ColdTransferPauseNotice status={workerStatus} />
-      <NextFreezeOrder transfers={stats?.queued_freeze_list ?? []} workerStatus={workerStatus} />
+      <NextFreezeOrder
+        transfers={stats?.queued_freeze_list ?? []}
+        workerStatus={workerStatus}
+        candidateCount={stats?.freeze_candidate_count ?? 0}
+        uploadBlockedCount={stats?.upload_blocked_freeze_candidates ?? 0}
+      />
 
       {/* Active transfers */}
       <div className="card">

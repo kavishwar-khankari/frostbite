@@ -9,3 +9,4 @@ For cluster-wide or infrastructure incidents (e.g. Longhorn, networking, node fa
 | # | Date | Title | Severity | Affected Component(s) | Root Cause | Status |
 |---|------|-------|----------|-----------------------|------------|--------|
 | 001 | 2026-06-09 | [Supernatural Jellyfin mount disconnect](001-supernatural-jellyfin-mount-disconnect.md) | Sev2 | Jellyfin playback, hostPath, mergerfs | Unattended host maintenance restarted node 3 mergerfs while Jellyfin pod kept stale FUSE bind mount | RCA complete, recovery pending pod restart |
+| 002 | 2026-07-11 | [Freeze queue appears missing](002-freeze-queue-appears-missing.md) | Sev3 | Freeze scheduler, dashboard | All below-threshold hot candidates exceeded OpenDrive's safe filename length while the dashboard hid empty operational panels | Fixed locally, deployment pending |
