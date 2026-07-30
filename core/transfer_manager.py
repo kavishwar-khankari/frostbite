@@ -691,8 +691,13 @@ async def _refresh_vfs_cache(rel_path: str) -> None:
     async with httpx.AsyncClient(timeout=10) as client:
         for vfs_url in vfs_urls:
             try:
-                # Forget the file first in case this node cached a stale or negative lookup.
-                await client.post(f"{vfs_url}/vfs/forget", json={"file": rel_path})
+                # Clear directory entries too: rclone caches a missing series directory
+                # independently from the file that was just moved to cloud.
+                await client.post(f"{vfs_url}/vfs/forget", json={
+                    "file": rel_path,
+                    "dir": parent_dir,
+                    "dir2": grandparent_dir,
+                })
                 resp = await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
                 body = resp.json()
                 # If rclone doesn't have a cache entry for this dir, refresh the

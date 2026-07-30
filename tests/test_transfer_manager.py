@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 
-from core import transfer_manager
+from core import deletion_manager, transfer_manager
 from models.tables import MediaItem, Transfer
 
 
@@ -90,3 +90,65 @@ def test_execute_transfer_normalizes_absolute_legacy_paths_before_preflight(monk
     assert t.dest_path == "Movies/Movie.mkv"
     assert t.status == "failed"
     assert t.error_message == "Source file not found on NAS: /mnt/nas/media/Movies/Movie.mkv"
+
+
+class FakeResponse:
+    def json(self):
+        return {}
+
+
+class FakeAsyncClient:
+    def __init__(self, requests):
+        self.requests = requests
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, url, json):
+        self.requests.append((url, json))
+        return FakeResponse()
+
+
+def test_vfs_invalidation_forgets_file_and_parent_directories(monkeypatch):
+    requests = []
+    monkeypatch.setattr(transfer_manager.settings, "rclone_vfs_urls", "http://node-a:5573")
+    monkeypatch.setattr(
+        transfer_manager.httpx,
+        "AsyncClient",
+        lambda **_: FakeAsyncClient(requests),
+    )
+
+    asyncio.run(transfer_manager._refresh_vfs_cache("series/anime/Show/Season 01/Episode.mkv"))
+
+    assert requests[0] == (
+        "http://node-a:5573/vfs/forget",
+        {
+            "file": "series/anime/Show/Season 01/Episode.mkv",
+            "dir": "series/anime/Show/Season 01",
+            "dir2": "series/anime/Show",
+        },
+    )
+
+
+def test_deletion_invalidation_forgets_file_and_parent_directories(monkeypatch):
+    requests = []
+    monkeypatch.setattr(deletion_manager.settings, "rclone_vfs_urls", "http://node-a:5573")
+    monkeypatch.setattr(
+        deletion_manager.httpx,
+        "AsyncClient",
+        lambda **_: FakeAsyncClient(requests),
+    )
+
+    asyncio.run(deletion_manager._invalidate_vfs("series/anime/Show/Season 01/Episode.mkv"))
+
+    assert requests[0] == (
+        "http://node-a:5573/vfs/forget",
+        {
+            "file": "series/anime/Show/Season 01/Episode.mkv",
+            "dir": "series/anime/Show/Season 01",
+            "dir2": "series/anime/Show",
+        },
+    )

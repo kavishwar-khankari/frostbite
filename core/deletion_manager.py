@@ -80,7 +80,13 @@ async def _invalidate_vfs(rel_path: str) -> None:
     async with httpx.AsyncClient(timeout=10) as client:
         for vfs_url in vfs_urls:
             try:
-                await client.post(f"{vfs_url}/vfs/forget", json={"file": rel_path})
+                # Forget directory entries as well as the file. A negative directory
+                # cache entry can otherwise hide a newly changed series for days.
+                await client.post(f"{vfs_url}/vfs/forget", json={
+                    "file": rel_path,
+                    "dir": parent_dir,
+                    "dir2": grandparent_dir,
+                })
                 await client.post(f"{vfs_url}/vfs/refresh", json={"dir": parent_dir})
             except Exception:
                 try:
