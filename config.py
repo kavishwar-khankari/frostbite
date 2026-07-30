@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     prefetch_boost: float = 40.0
     prefetch_cooldown_days: int = 3
     prefetch_grace_hours: int = 12
+    manual_reheat_freeze_window_days: int = 2
 
     # Transfer settings
     max_concurrent_reheats: int = 2

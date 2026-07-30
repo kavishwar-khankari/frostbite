@@ -565,10 +565,8 @@ async def _resolve_orphaned_transfer(db: AsyncSession, transfer: Transfer) -> No
         if os.path.isfile(nas_path):
             transfer.status = "completed"
             transfer.completed_at = datetime.utcnow()
-            item.storage_tier = "hot"
-            item.transfer_direction = None
             logger.info("Orphan %s: %s found on NAS, completing", transfer.id, item.title)
-            await broadcast({"type": "transfer_complete", "transfer_id": str(transfer.id), "title": item.title, "tier": "hot"})
+            await _on_transfer_complete(db, transfer)
             return
 
     # File didn't make it — stop any lingering rclone job, then re-queue.
@@ -748,6 +746,8 @@ async def _on_transfer_complete(db: AsyncSession, transfer: Transfer) -> None:
     else:
         # Reheat — file is now on NAS, cloud copy stays as backup
         new_tier = "hot"
+        if transfer.trigger == "manual":
+            item.last_manual_reheat_at = transfer.completed_at or datetime.utcnow()
 
     item.storage_tier = new_tier
     item.transfer_direction = None

@@ -73,6 +73,23 @@ def test_save_override_inserts_new_row(monkeypatch):
     assert session.committed is True
 
 
+def test_manual_reheat_freeze_window_days_is_editable(monkeypatch):
+    session = FakeSession(ScalarResult(None))
+    monkeypatch.setattr(runtime_settings, "async_session_factory", lambda: session)
+    monkeypatch.setattr(
+        runtime_settings.settings,
+        "manual_reheat_freeze_window_days",
+        runtime_settings.settings.manual_reheat_freeze_window_days,
+    )
+
+    asyncio.run(runtime_settings.save_override("manual_reheat_freeze_window_days", "5"))
+
+    assert runtime_settings.settings.manual_reheat_freeze_window_days == 5
+    assert session.added[0].key == "manual_reheat_freeze_window_days"
+    assert session.added[0].value == "5"
+    assert "manual_reheat_freeze_window_days" in runtime_settings.EDITABLE_KEYS
+
+
 def test_save_override_rejects_non_editable_setting(monkeypatch):
     monkeypatch.setattr(
         runtime_settings,

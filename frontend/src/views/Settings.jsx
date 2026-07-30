@@ -28,6 +28,11 @@ const SETTING_META = {
     desc: 'Hours after a prefetch during which auto-score will not re-freeze the episode. Prevents ping-pong between prefetch reheat and auto-freeze.',
     min: 1, max: 72, step: 1, unit: ' hrs',
   },
+  manual_reheat_freeze_window_days: {
+    label: 'Manual Reheat Freeze Window',
+    desc: 'Days after a successful manual reheat during which automatic freezing is blocked. Set to 0 to disable. Manual freeze still overrides this hold.',
+    min: 0, max: 30, step: 1, unit: ' days',
+  },
   freeze_window_start: {
     label: 'Freeze Window Start',
     desc: 'Hour of day (local time) when freeze transfers may begin (0–23).',

@@ -107,22 +107,23 @@ When you solve a Frostbite incident:
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+This project has a **repo-local** knowledge graph at `graphify-out/` (gitignored). Sibling repos (e.g. kubernetes-homelab) have their own `graphify-out/` — never share or point across folders.
 
 Rules:
 - ALWAYS read graphify-out/GRAPH_REPORT.md before reading any source files, running grep/glob searches, or answering codebase questions. The graph is your primary map of the codebase.
 - IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code, run `graphify update .` and `repowise update` to keep both code-intelligence stores current. `repowise update` may spend DeepSeek API tokens; this is expected and acceptable for this repo.
+- After modifying code, run `graphify update .` and `repowise update` **from this repo root** to keep both code-intelligence stores current. `repowise update` may spend DeepSeek API tokens; this is expected and acceptable for this repo.
 
 ## repowise
 
-This project has a Repowise wiki/index in `.repowise/`, exposed through the Repowise MCP tools.
+This project has a **repo-local** Repowise wiki/index in `.repowise/` (gitignored). MCP is cwd-relative (`.opencode/opencode.json` and `.vscode/mcp.json` use `repowise mcp .`). Global Claude MCP uses `repowise-mcp-here`, which walks up from the open folder to the nearest `.repowise/`. Do not create a parent multi-repo workspace under `Documents/personal/` unless explicitly requested.
 
 Rules:
 - Use Repowise tools for architecture/context/risk questions when they are a better fit than raw file search.
-- After modifying code, run `repowise update` so the wiki, graph, git signals, and generated docs stay current.
+- After modifying code, run `repowise update` from this repo root so the wiki, graph, git signals, and generated docs stay current.
 - If you only need a no-LLM refresh, use `repowise update --index-only`, but default to full `repowise update` because DeepSeek V4 Flash token cost is acceptable here.
+- Set `REPOWISE_SKIP_EDITOR_SETUP=1` when running `repowise init` so it does not rewrite global Claude MCP to a single hardcoded repo path.
 
 ## Web search
 

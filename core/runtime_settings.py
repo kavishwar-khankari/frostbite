@@ -23,6 +23,7 @@ EDITABLE_KEYS: dict[str, type] = {
     "prefetch_boost": float,
     "prefetch_cooldown_days": int,
     "prefetch_grace_hours": int,
+    "manual_reheat_freeze_window_days": int,
     "freeze_window_start": int,
     "freeze_window_end": int,
     "max_concurrent_reheats": int,

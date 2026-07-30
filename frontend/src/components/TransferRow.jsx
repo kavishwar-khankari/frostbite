@@ -31,6 +31,12 @@ function queuedWaitReason(transfer, workerStatus) {
 
   if (transfer.direction === 'freeze') {
     if (transfer.item_upload_blocked) return 'Blocked: filename is too long for cloud storage.'
+    if (
+      ['auto_score', 'space_pressure'].includes(transfer.trigger)
+      && transfer.item_manual_reheat_protected_until
+    ) {
+      return `Protected from auto-freeze after manual reheat until ${formatDateTime(transfer.item_manual_reheat_protected_until)}.`
+    }
     if (transfer.trigger === 'auto_score' && transfer.item_prefetch_protected_until) {
       return `Protected from auto-freeze until watched or ${formatDateTime(transfer.item_prefetch_protected_until)}.`
     }

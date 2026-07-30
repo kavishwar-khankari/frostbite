@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 from api.deps import DBSession
 from config import settings
 from core.filesystem import bytes_to_gib, stat_storage
+from core.freeze_policy import manual_reheat_protection_map
 from core.prefetch_state import prefetch_protection_map
 from models.schemas import DashboardStats, TransferResponse
 from models.tables import MediaItem, Transfer
@@ -105,6 +106,7 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
         if t.media_item
     }.values())
     prefetch_map = await prefetch_protection_map(db, transfer_items)
+    manual_map = manual_reheat_protection_map(transfer_items)
 
     freeze_candidate_result = await db.execute(
         select(
@@ -143,16 +145,22 @@ async def get_dashboard(db: DBSession) -> DashboardStats:
         cloud_usage_source=cloud_usage_source,
         nas_free_gb=nas_free_gib or 0.0,
         active_transfers=[
-            TransferResponse.from_orm_with_item(t, t.media_item, prefetch_map.get(t.media_item_id))
+            TransferResponse.from_orm_with_item(
+                t, t.media_item, prefetch_map.get(t.media_item_id), manual_map.get(t.media_item_id)
+            )
             for t in active_transfers
         ],
         queued_transfers=queued_count,
         queued_transfer_list=[
-            TransferResponse.from_orm_with_item(t, t.media_item, prefetch_map.get(t.media_item_id))
+            TransferResponse.from_orm_with_item(
+                t, t.media_item, prefetch_map.get(t.media_item_id), manual_map.get(t.media_item_id)
+            )
             for t in queued_transfers_list
         ],
         queued_freeze_list=[
-            TransferResponse.from_orm_with_item(t, t.media_item, prefetch_map.get(t.media_item_id))
+            TransferResponse.from_orm_with_item(
+                t, t.media_item, prefetch_map.get(t.media_item_id), manual_map.get(t.media_item_id)
+            )
             for t in freezes
         ],
         freeze_candidate_count=freeze_candidates.total or 0,

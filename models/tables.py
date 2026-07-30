@@ -44,6 +44,7 @@ class MediaItem(Base):
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     last_scored_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_prefetch_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_manual_reheat_at: Mapped[datetime | None] = mapped_column(nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Jellyfin metadata

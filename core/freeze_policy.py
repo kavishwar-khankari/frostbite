@@ -38,6 +38,61 @@ def is_prefetch_protected(
     ) is not None
 
 
+def manual_reheat_protected_until(
+    last_manual_reheat_at: datetime | None,
+    now: datetime,
+    grace_days: int,
+    *,
+    item_storage_tier: str,
+) -> datetime | None:
+    """Return expiry if a manual reheat should block automatic freezes."""
+    if not last_manual_reheat_at or grace_days <= 0:
+        return None
+    if item_storage_tier != "hot":
+        return None
+
+    protected_until = last_manual_reheat_at + timedelta(days=grace_days)
+    return protected_until if protected_until > now else None
+
+
+def is_manual_reheat_protected(
+    last_manual_reheat_at: datetime | None,
+    now: datetime,
+    grace_days: int,
+    *,
+    item_storage_tier: str,
+) -> bool:
+    return manual_reheat_protected_until(
+        last_manual_reheat_at,
+        now,
+        grace_days,
+        item_storage_tier=item_storage_tier,
+    ) is not None
+
+
+def manual_reheat_protection_map(
+    items,
+    now: datetime | None = None,
+    grace_days: int | None = None,
+) -> dict:
+    """Return protected-until timestamps keyed by media item id."""
+    from config import settings
+
+    now = now or datetime.utcnow()
+    if grace_days is None:
+        grace_days = settings.manual_reheat_freeze_window_days
+    return {
+        item.id: manual_reheat_protected_until(
+            getattr(item, "last_manual_reheat_at", None),
+            now,
+            grace_days,
+            item_storage_tier=item.storage_tier,
+        )
+        for item in items
+        if item
+    }
+
+
 def queued_transfer_cancel_reason(
     *,
     direction: str,
@@ -48,6 +103,7 @@ def queued_transfer_cancel_reason(
     reheat_threshold: float,
     upload_blocked: bool,
     prefetch_protected: bool,
+    manual_reheat_protected: bool = False,
 ) -> str | None:
     """Return why a queued transfer is stale/unsafe, or None if it should remain."""
     if direction == "freeze":
@@ -55,6 +111,8 @@ def queued_transfer_cancel_reason(
             return "Item is no longer hot"
         if upload_blocked:
             return "Filename too long for cloud storage"
+        if trigger in ("auto_score", "space_pressure") and manual_reheat_protected:
+            return "Protected after manual reheat"
         if trigger == "auto_score":
             if item_temperature >= freeze_threshold:
                 return "Temperature rose above freeze threshold"

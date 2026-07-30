@@ -5,6 +5,7 @@ from sqlalchemy import func, select, text
 
 from api.deps import DBSession
 from core.deletion_manager import get_item_protection
+from core.freeze_policy import manual_reheat_protection_map
 from core.prefetch_state import prefetch_protection_map
 from models.schemas import MediaItemResponse
 from models.tables import MediaItem, DeletionException
@@ -93,6 +94,7 @@ async def list_items(
             }
 
         prefetch_map = await prefetch_protection_map(db, items)
+        manual_map = manual_reheat_protection_map(items)
 
         enriched = []
         for item in items:
@@ -100,6 +102,9 @@ async def list_items(
             protected_until = prefetch_map.get(item.id)
             resp.prefetch_protected_until = protected_until
             resp.prefetch_protected = protected_until is not None
+            manual_until = manual_map.get(item.id)
+            resp.manual_reheat_protected_until = manual_until
+            resp.manual_reheat_protected = manual_until is not None
             if item.jellyfin_id in item_exceptions:
                 exc = item_exceptions[item.jellyfin_id]
                 resp.deletion_protected = True

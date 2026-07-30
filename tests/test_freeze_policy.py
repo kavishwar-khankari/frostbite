@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from core.freeze_policy import (
     freeze_start_blocker,
+    manual_reheat_protected_until,
     prefetch_protected_until,
     queued_transfer_cancel_reason,
     reheat_start_blocker,
@@ -55,6 +56,58 @@ def test_auto_freeze_cancelled_for_prefetch_but_manual_freeze_is_kept():
         prefetch_protected=True,
     )
     assert manual_reason is None
+
+
+def test_manual_reheat_protection_window():
+    now = datetime(2026, 7, 30, 12, 0, 0)
+    last_reheat = now - timedelta(days=1)
+
+    assert manual_reheat_protected_until(
+        last_reheat,
+        now,
+        2,
+        item_storage_tier="hot",
+    ) == last_reheat + timedelta(days=2)
+    assert manual_reheat_protected_until(last_reheat, now, 0, item_storage_tier="hot") is None
+    assert manual_reheat_protected_until(now - timedelta(days=3), now, 2, item_storage_tier="hot") is None
+    assert manual_reheat_protected_until(None, now, 2, item_storage_tier="hot") is None
+    assert manual_reheat_protected_until(last_reheat, now, 2, item_storage_tier="cold") is None
+
+
+def test_auto_and_space_pressure_freezes_cancelled_for_manual_reheat_hold():
+    assert queued_transfer_cancel_reason(
+        direction="freeze",
+        trigger="auto_score",
+        item_storage_tier="hot",
+        item_temperature=5.0,
+        freeze_threshold=25.0,
+        reheat_threshold=60.0,
+        upload_blocked=False,
+        prefetch_protected=False,
+        manual_reheat_protected=True,
+    ) == "Protected after manual reheat"
+    assert queued_transfer_cancel_reason(
+        direction="freeze",
+        trigger="space_pressure",
+        item_storage_tier="hot",
+        item_temperature=5.0,
+        freeze_threshold=25.0,
+        reheat_threshold=60.0,
+        upload_blocked=False,
+        prefetch_protected=False,
+        manual_reheat_protected=True,
+    ) == "Protected after manual reheat"
+    assert queued_transfer_cancel_reason(
+        direction="freeze",
+        trigger="manual",
+        item_storage_tier="hot",
+        item_temperature=5.0,
+        freeze_threshold=25.0,
+        reheat_threshold=60.0,
+        upload_blocked=False,
+        prefetch_protected=False,
+        manual_reheat_protected=True,
+    ) is None
 
 
 def test_score_based_cancellation_only_applies_to_auto_score():

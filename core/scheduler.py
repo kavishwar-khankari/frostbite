@@ -10,7 +10,11 @@ from sqlalchemy import func, select, text
 
 from config import settings
 from core.filesystem import bytes_to_gib, nas_free_bytes, stat_storage
-from core.freeze_policy import prefetch_protected_until, queued_transfer_cancel_reason
+from core.freeze_policy import (
+    is_manual_reheat_protected,
+    prefetch_protected_until,
+    queued_transfer_cancel_reason,
+)
 from core.tdarr_client import TdarrClient
 from core.playback_import import sync_playback_from_reporting
 from core.transfer_manager import queue_transfer, start_worker, stop_worker
@@ -205,6 +209,12 @@ async def scoring_sweep() -> None:
                 item_storage_tier=item.storage_tier,
             )
             prefetch_protected = protected_until is not None
+            manual_reheat_protected = is_manual_reheat_protected(
+                item.last_manual_reheat_at,
+                now,
+                settings.manual_reheat_freeze_window_days,
+                item_storage_tier=item.storage_tier,
+            )
 
             existing = pending_by_item.get(item.id, [])
 
@@ -224,6 +234,7 @@ async def scoring_sweep() -> None:
                     reheat_threshold=settings.reheat_threshold,
                     upload_blocked=item.upload_blocked,
                     prefetch_protected=prefetch_protected,
+                    manual_reheat_protected=manual_reheat_protected,
                 )
                 if reason:
                     t.status = "cancelled"
@@ -236,9 +247,15 @@ async def scoring_sweep() -> None:
             if existing:
                 continue
 
-            # Don't auto-freeze prefetched items until the user watches them or
-            # the grace expires. Manual/emergency freezes remain explicit overrides.
-            if item.storage_tier == "hot" and new_temp < settings.freeze_threshold and not item.upload_blocked and not prefetch_protected:
+            # Don't auto-freeze prefetched or recently manual-reheated items.
+            # Manual freezes remain explicit overrides.
+            if (
+                item.storage_tier == "hot"
+                and new_temp < settings.freeze_threshold
+                and not item.upload_blocked
+                and not prefetch_protected
+                and not manual_reheat_protected
+            ):
                 await queue_transfer(db, item.id, "freeze", "auto_score", priority=int(settings.freeze_threshold - new_temp))
                 pending_by_item[item.id] = [True]  # sentinel — prevents double-queue
                 queued_freeze += 1
@@ -259,15 +276,29 @@ async def check_nas_space() -> None:
     free_gib = bytes_to_gib(nas_free_bytes()) or 0.0
     if free_gib < settings.emergency_freeze_threshold_gb:
         logger.warning("NAS free space critical: %.1f GiB — triggering emergency freezes", free_gib)
+        now = datetime.utcnow()
         async with async_session_factory() as db:
             result = await db.execute(
                 select(MediaItem)
                 .where(MediaItem.storage_tier == "hot", MediaItem.upload_blocked == False)
                 .order_by(MediaItem.temperature.asc())
-                .limit(10)
+                .limit(30)
             )
+            queued = 0
             for item in result.scalars():
+                if is_manual_reheat_protected(
+                    item.last_manual_reheat_at,
+                    now,
+                    settings.manual_reheat_freeze_window_days,
+                    item_storage_tier=item.storage_tier,
+                ):
+                    continue
                 await queue_transfer(db, item.id, "freeze", "space_pressure", priority=95)
+                queued += 1
+                if queued >= 10:
+                    break
+            if queued == 0:
+                logger.warning("NAS free space critical but no unprotected freeze candidates available")
             await db.commit()
 
 

@@ -24,6 +24,9 @@ class MediaItemResponse(BaseModel):
     last_prefetch_at: datetime | None = None
     prefetch_protected: bool = False
     prefetch_protected_until: datetime | None = None
+    last_manual_reheat_at: datetime | None = None
+    manual_reheat_protected: bool = False
+    manual_reheat_protected_until: datetime | None = None
     date_added: datetime | None
     tdarr_eligible: bool
     tdarr_status: str | None
@@ -76,11 +79,20 @@ class TransferResponse(BaseModel):
     item_last_prefetch_at: datetime | None = None
     item_prefetch_protected: bool = False
     item_prefetch_protected_until: datetime | None = None
+    item_last_manual_reheat_at: datetime | None = None
+    item_manual_reheat_protected: bool = False
+    item_manual_reheat_protected_until: datetime | None = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_orm_with_item(cls, t, item, prefetch_protected_until: datetime | None = None) -> "TransferResponse":
+    def from_orm_with_item(
+        cls,
+        t,
+        item,
+        prefetch_protected_until: datetime | None = None,
+        manual_reheat_protected_until: datetime | None = None,
+    ) -> "TransferResponse":
         d = {
             "id": t.id,
             "media_item_id": t.media_item_id,
@@ -109,6 +121,9 @@ class TransferResponse(BaseModel):
             d["item_last_prefetch_at"] = item.last_prefetch_at
             d["item_prefetch_protected_until"] = prefetch_protected_until
             d["item_prefetch_protected"] = prefetch_protected_until is not None
+            d["item_last_manual_reheat_at"] = getattr(item, "last_manual_reheat_at", None)
+            d["item_manual_reheat_protected_until"] = manual_reheat_protected_until
+            d["item_manual_reheat_protected"] = manual_reheat_protected_until is not None
         return cls(**d)
 
 

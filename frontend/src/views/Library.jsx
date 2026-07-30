@@ -113,6 +113,19 @@ function PrefetchHoldBadge({ item }) {
   )
 }
 
+function ManualReheatHoldBadge({ item }) {
+  if (!item.manual_reheat_protected) return null
+  const until = formatDateTime(item.manual_reheat_protected_until)
+  return (
+    <span
+      className="ml-2 rounded border border-amber-400/20 bg-amber-950/30 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300/90"
+      title={`Auto-freeze is held after manual reheat until ${until}. Manual freeze still overrides this hold.`}
+    >
+      reheat hold
+    </span>
+  )
+}
+
 function TdarrBadge({ eligible, status }) {
   if (!eligible && !status) return <span className="text-xs text-gray-700">—</span>
   const map = {
@@ -166,6 +179,7 @@ function ItemRow({ item, selected, onSelect }) {
         <div className="font-medium text-sm text-white truncate">
           {item.title}
           <PrefetchHoldBadge item={item} />
+          <ManualReheatHoldBadge item={item} />
         </div>
         <div className="text-xs text-gray-600 truncate">{item.file_path}</div>
         {item.deletion_protected && (

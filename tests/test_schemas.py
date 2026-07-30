@@ -70,6 +70,7 @@ def test_transfer_response_from_orm_with_item_sets_prefetch_fields():
     media_item_id = uuid.uuid4()
     queued_at = datetime(2026, 6, 12, 12, 0, 0)
     protected_until = datetime(2026, 6, 13, 0, 0, 0)
+    manual_until = datetime(2026, 6, 14, 12, 0, 0)
     transfer = SimpleNamespace(
         id=transfer_id,
         media_item_id=media_item_id,
@@ -96,11 +97,15 @@ def test_transfer_response_from_orm_with_item_sets_prefetch_fields():
         storage_tier="hot",
         upload_blocked=False,
         last_prefetch_at=datetime(2026, 6, 12, 8, 0, 0),
+        last_manual_reheat_at=datetime(2026, 6, 12, 12, 0, 0),
     )
 
-    response = TransferResponse.from_orm_with_item(transfer, item, protected_until)
+    response = TransferResponse.from_orm_with_item(transfer, item, protected_until, manual_until)
 
     assert response.id == transfer_id
     assert response.item_title == "Episode 1"
     assert response.item_prefetch_protected is True
     assert response.item_prefetch_protected_until == protected_until
+    assert response.item_manual_reheat_protected is True
+    assert response.item_manual_reheat_protected_until == manual_until
+    assert response.item_last_manual_reheat_at == item.last_manual_reheat_at
