@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     prefetch_grace_hours: int = 12
     manual_reheat_freeze_window_days: int = 2
 
+    # Playback reheat — pull a watched cold file back to NAS
+    playback_reheat_after_seconds: int = 60
+    playback_reheat_enabled: bool = True
+
     # Transfer settings
     max_concurrent_reheats: int = 2
     max_concurrent_freezes: int = 2

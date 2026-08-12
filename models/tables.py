@@ -112,7 +112,7 @@ class Transfer(Base):
         UUID(as_uuid=True), ForeignKey("media_items.id", ondelete="CASCADE"), nullable=False
     )
     direction: Mapped[str] = mapped_column(String(10), nullable=False)   # freeze, reheat
-    trigger: Mapped[str] = mapped_column(String(20), nullable=False)     # auto_score, prefetch, manual, space_pressure
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)     # auto_score, prefetch, manual, space_pressure, playback
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
 
     # rclone job tracking

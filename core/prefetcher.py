@@ -22,6 +22,41 @@ from models.tables import MediaItem, PlaybackEvent, Transfer
 
 logger = logging.getLogger(__name__)
 
+_TICKS_PER_SECOND = 10_000_000
+
+
+# ── Playback reheat ──────────────────────────────────────────────────────────
+
+def _playback_reheat_due(item: MediaItem, play_duration_ticks: int | None) -> bool:
+    """Whether a watched cold item should be pulled back to NAS.
+
+    Position-delta based: the session must accumulate
+    playback_reheat_after_seconds of NEW playback since its start
+    (resume-from-bookmark does not skip the clock).
+    """
+    if not settings.playback_reheat_enabled:
+        return False
+    if item.storage_tier != "cold":
+        return False
+    if play_duration_ticks is None:
+        return False
+    return play_duration_ticks >= settings.playback_reheat_after_seconds * _TICKS_PER_SECOND
+
+
+async def _maybe_reheat_played_cold(db: AsyncSession, item: MediaItem, play_duration_ticks: int | None) -> None:
+    """Queue a reheat for a cold file that has actually been watched past the threshold."""
+    if play_duration_ticks is None:
+        return
+    if not _playback_reheat_due(item, play_duration_ticks):
+        return
+    await _cancel_queued_auto_freeze(db, item)
+    transfer = await queue_transfer(db, item.id, direction="reheat", trigger="playback", priority=95)
+    if transfer:
+        logger.info(
+            "Playback reheat queued for %s after %.0fs of new playback",
+            item.title, play_duration_ticks / _TICKS_PER_SECOND,
+        )
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -188,7 +223,7 @@ async def on_playback_start(event: PlaybackEventIn) -> None:
         logger.info("PlaybackStart: %s (tier=%s, temp=%.1f)", item.title, item.storage_tier, item.temperature)
 
 
-async def on_playback_stop(event: PlaybackEventIn) -> None:
+async def on_playback_stop(event: PlaybackEventIn, play_duration_ticks: int | None = None) -> None:
     async with async_session_factory() as db:
         item = await _get_or_create_item(db, event)
         if not item:
@@ -202,11 +237,13 @@ async def on_playback_stop(event: PlaybackEventIn) -> None:
             if completion >= 0.8:
                 await _boost_temperature(db, item, 10.0)
 
+        await _maybe_reheat_played_cold(db, item, play_duration_ticks)
+
         await db.commit()
         await broadcast({"type": "score_update", "jellyfin_id": item.jellyfin_id, "temperature": item.temperature})
 
 
-async def on_playback_progress(event: PlaybackEventIn) -> None:
+async def on_playback_progress(event: PlaybackEventIn, play_duration_ticks: int | None = None) -> None:
     async with async_session_factory() as db:
         item = await _get_or_create_item(db, event)
         if not item:
@@ -241,6 +278,8 @@ async def on_playback_progress(event: PlaybackEventIn) -> None:
                 ))
                 await _boost_temperature(db, item, 30.0)
                 await prefetch_after_playback_start(db, item)
+
+        await _maybe_reheat_played_cold(db, item, play_duration_ticks)
 
         await db.commit()
 

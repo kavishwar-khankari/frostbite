@@ -8,7 +8,7 @@ router = APIRouter()
 
 class SettingUpdate(BaseModel):
     key: str
-    value: float | int | str
+    value: float | int | str | bool
 
 
 @router.get("/settings")

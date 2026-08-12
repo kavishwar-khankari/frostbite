@@ -33,6 +33,16 @@ const SETTING_META = {
     desc: 'Days after a successful manual reheat during which automatic freezing is blocked. Set to 0 to disable. Manual freeze still overrides this hold.',
     min: 0, max: 30, step: 1, unit: ' days',
   },
+  playback_reheat_after_seconds: {
+    label: 'Playback Reheat After',
+    desc: 'Seconds of new playback (since session start) before a watched cold file is reheated back to NAS. Applies to live-stream and stop triggers.',
+    min: 10, max: 600, step: 10, unit: ' s',
+  },
+  playback_reheat_enabled: {
+    label: 'Playback Reheat',
+    desc: 'When enabled, cold files you actually watch (≥ the threshold) are pulled back to NAS so future plays are instant.',
+    type: 'toggle',
+  },
   freeze_window_start: {
     label: 'Freeze Window Start',
     desc: 'Hour of day (local time) when freeze transfers may begin (0–23).',
@@ -103,23 +113,38 @@ function SettingRow({ name, value, onSave }) {
           <div className="text-xs text-gray-500 mt-0.5">{meta.desc}</div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <input
-            type="number"
-            min={meta.min}
-            max={meta.max}
-            step={meta.step}
-            value={draft}
-            onChange={handleChange}
-            className="input w-24 text-right"
-          />
-          <span className="text-xs text-gray-500 w-6">{meta.unit}</span>
-          <button
-            className={`btn text-xs py-1.5 px-3 ${dirty ? 'btn-primary' : saved ? 'bg-emerald-900/30 text-emerald-400 cursor-default' : 'btn-ghost opacity-40 cursor-default'}`}
-            onClick={dirty ? save : undefined}
-            disabled={!dirty}
-          >
-            {saved ? '✓ Saved' : 'Save'}
-          </button>
+          {meta.type === 'toggle' ? (
+            <input
+              type="checkbox"
+              checked={value === true}
+              onChange={e => {
+                setDraft(String(e.target.checked))
+                setSaved(false)
+                onSave(name, e.target.checked, () => setSaved(true))
+              }}
+              className="w-4 h-4"
+            />
+          ) : (
+            <>
+              <input
+                type="number"
+                min={meta.min}
+                max={meta.max}
+                step={meta.step}
+                value={draft}
+                onChange={handleChange}
+                className="input w-24 text-right"
+              />
+              <span className="text-xs text-gray-500 w-6">{meta.unit}</span>
+              <button
+                className={`btn text-xs py-1.5 px-3 ${dirty ? 'btn-primary' : saved ? 'bg-emerald-900/30 text-emerald-400 cursor-default' : 'btn-ghost opacity-40 cursor-default'}`}
+                onClick={dirty ? save : undefined}
+                disabled={!dirty}
+              >
+                {saved ? '✓ Saved' : 'Save'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

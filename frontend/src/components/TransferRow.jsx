@@ -25,6 +25,14 @@ const STATUS_COLOR = {
   retried:   'text-amber-400',
 }
 
+const TRIGGER_LABEL = {
+  auto_score: 'Auto Score',
+  space_pressure: 'NAS Space',
+  prefetch: 'Prefetch',
+  manual: 'Manual',
+  playback: 'Playback',
+}
+
 function queuedWaitReason(transfer, workerStatus) {
   if (transfer.status !== 'queued') return null
   if (workerStatus?.paused) return 'Waiting: transfer worker is paused.'
@@ -103,7 +111,7 @@ export default function TransferRow({ transfer, workerStatus }) {
             {transfer.direction === 'freeze' ? '❄️ → Cold' : '🔥 → Hot'}
           </span>
           <span className="text-xs text-gray-600">
-            {transfer.trigger}
+            {TRIGGER_LABEL[transfer.trigger] || transfer.trigger}
           </span>
         </div>
         {transfer.status === 'active' && transfer.bytes_total > 0 && (

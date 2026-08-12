@@ -207,6 +207,8 @@ export default function Transfers() {
         <div className="flex items-center gap-1 border border-gray-700 rounded px-1 py-0.5">
           <FilterBtn active={triggerFilter === ''} onClick={() => setTriggerFilter('')}>Any trigger</FilterBtn>
           <FilterBtn active={triggerFilter === 'auto_score'} onClick={() => setTriggerFilter('auto_score')}>auto</FilterBtn>
+          <FilterBtn active={triggerFilter === 'prefetch'} onClick={() => setTriggerFilter('prefetch')}>prefetch</FilterBtn>
+          <FilterBtn active={triggerFilter === 'playback'} onClick={() => setTriggerFilter('playback')}>playback</FilterBtn>
           <FilterBtn active={triggerFilter === 'manual'} onClick={() => setTriggerFilter('manual')}>manual</FilterBtn>
           <FilterBtn active={triggerFilter === 'space_pressure'} onClick={() => setTriggerFilter('space_pressure')}>emergency</FilterBtn>
         </div>

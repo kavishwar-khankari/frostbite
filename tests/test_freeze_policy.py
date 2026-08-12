@@ -136,6 +136,32 @@ def test_score_based_cancellation_only_applies_to_auto_score():
     assert manual_reason is None
 
 
+def test_playback_reheat_kept_on_low_temp_but_cancelled_when_no_longer_cold():
+    # A playback-triggered reheat must survive low temperature (only
+    # auto_score reheats are cancelled on temp drop), but is cancelled
+    # once the item is no longer cold (e.g. reheat completed).
+    assert queued_transfer_cancel_reason(
+        direction="reheat",
+        trigger="playback",
+        item_storage_tier="cold",
+        item_temperature=5.0,
+        freeze_threshold=25.0,
+        reheat_threshold=60.0,
+        upload_blocked=False,
+        prefetch_protected=False,
+    ) is None
+    assert queued_transfer_cancel_reason(
+        direction="reheat",
+        trigger="playback",
+        item_storage_tier="hot",
+        item_temperature=90.0,
+        freeze_threshold=25.0,
+        reheat_threshold=60.0,
+        upload_blocked=False,
+        prefetch_protected=False,
+    ) == "Item is no longer cold"
+
+
 def test_impossible_transfer_states_are_cancelled_for_all_triggers():
     assert queued_transfer_cancel_reason(
         direction="freeze",
