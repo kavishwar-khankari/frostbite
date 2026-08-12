@@ -193,11 +193,20 @@ class PlaybackEventIn(BaseModel):
         session = payload.get("Session") or {}
 
         def _int(val: object) -> int | None:
-            """Safely coerce string/float/None → int."""
+            """Safely coerce string/float/None → int. "0" is a valid value."""
             try:
-                return int(val) if val not in (None, "", "0") else None
+                if val in (None, ""):
+                    return None
+                return int(val)  # type: ignore[arg-type]  # int("0") etc.
             except (TypeError, ValueError):
                 return None
+
+        def _first(*vals: object) -> object:
+            """First non-None value — preserves falsy 0 unlike `or`."""
+            for v in vals:
+                if v is not None:
+                    return v
+            return None
 
         # Nested MediaSources path (stock webhook) → not available in flat mode.
         # Flat template: Jellyfin exposes {{ItemPath}} or {{Path}}.
@@ -234,13 +243,17 @@ class PlaybackEventIn(BaseModel):
                 or session.get("PlayState", {}).get("PlayMethod")
             ),
             position_ticks=_int(
-                payload.get("PositionTicks")
-                or payload.get("PlaybackPositionTicks")
-                or session.get("PlayState", {}).get("PositionTicks")
+                _first(
+                    payload.get("PositionTicks"),
+                    payload.get("PlaybackPositionTicks"),
+                    session.get("PlayState", {}).get("PositionTicks"),
+                )
             ),
             duration_ticks=_int(
-                payload.get("RunTimeTicks")
-                or item.get("RunTimeTicks")
+                _first(
+                    payload.get("RunTimeTicks"),
+                    item.get("RunTimeTicks"),
+                )
             ),
             client_name=(
                 payload.get("ClientName")

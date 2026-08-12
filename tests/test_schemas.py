@@ -27,12 +27,46 @@ def test_playback_event_from_flat_webhook_normalizes_ids_and_numbers():
 
     assert event.jellyfin_id == "a1b2c3d4111122223333444455556666"
     assert event.event_type == "start"
-    assert event.position_ticks is None
+    assert event.position_ticks == 0  # "0" is a valid position, not missing
     assert event.duration_ticks == 12345
     assert event.item_type == "episode"
     assert event.season_number == 2
     assert event.episode_number is None
     assert event.file_path == "/media_2/Show/S02E01.mkv"
+
+
+def test_playback_event_preserves_zero_position_from_new_template():
+    # Webhook plugin v21 emits PlaybackPositionTicks (not PositionTicks).
+    # A fresh start at position 0 must survive the parser — otherwise the
+    # playback-reheat clock never starts.
+    event = PlaybackEventIn.from_webhook({
+        "ItemId": "abc",
+        "UserId": "user-1",
+        "NotificationType": "PlaybackStart",
+        "PlaybackPositionTicks": 0,
+        "RunTimeTicks": 5000000000,
+    })
+    assert event.position_ticks == 0
+    assert event.duration_ticks == 5000000000
+
+    # Mid-playback progress with a real position
+    progress = PlaybackEventIn.from_webhook({
+        "ItemId": "abc",
+        "UserId": "user-1",
+        "NotificationType": "PlaybackProgress",
+        "PlaybackPositionTicks": "700000000",
+        "RunTimeTicks": "5000000000",
+    })
+    assert progress.position_ticks == 700000000
+
+
+def test_playback_event_absent_position_is_none():
+    # Missing position on a non-playback notification → None, not 0
+    event = PlaybackEventIn.from_webhook({
+        "NotificationType": "ItemAdded",
+        "Item": {"Id": "xyz", "Type": "Episode", "Name": "Nope"},
+    })
+    assert event.position_ticks is None
 
 
 def test_playback_event_from_nested_webhook_uses_stock_payload_fallbacks():
