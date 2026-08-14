@@ -90,6 +90,23 @@ def test_manual_reheat_freeze_window_days_is_editable(monkeypatch):
     assert "manual_reheat_freeze_window_days" in runtime_settings.EDITABLE_KEYS
 
 
+def test_prefetch_episodes_ahead_is_editable(monkeypatch):
+    session = FakeSession(ScalarResult(None))
+    monkeypatch.setattr(runtime_settings, "async_session_factory", lambda: session)
+    monkeypatch.setattr(
+        runtime_settings.settings,
+        "prefetch_episodes_ahead",
+        runtime_settings.settings.prefetch_episodes_ahead,
+    )
+
+    asyncio.run(runtime_settings.save_override("prefetch_episodes_ahead", "5"))
+
+    assert runtime_settings.settings.prefetch_episodes_ahead == 5
+    assert session.added[0].key == "prefetch_episodes_ahead"
+    assert session.added[0].value == "5"
+    assert "prefetch_episodes_ahead" in runtime_settings.EDITABLE_KEYS
+
+
 def test_save_override_rejects_non_editable_setting(monkeypatch):
     monkeypatch.setattr(
         runtime_settings,

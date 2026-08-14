@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     prefetch_boost: float = 40.0
     prefetch_cooldown_days: int = 3
     prefetch_grace_hours: int = 12
+    prefetch_episodes_ahead: int = 3
     manual_reheat_freeze_window_days: int = 2
 
     # Playback reheat — pull a watched cold file back to NAS

@@ -156,7 +156,7 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
             MediaItem.series_id == item.series_id,
             MediaItem.season_number == item.season_number,
             MediaItem.episode_number > item.episode_number,
-            MediaItem.episode_number <= item.episode_number + 3,
+            MediaItem.episode_number <= item.episode_number + settings.prefetch_episodes_ahead,
         )
         .order_by(MediaItem.episode_number)
     )
@@ -169,7 +169,7 @@ async def _prefetch_next_episodes(db: AsyncSession, item: MediaItem) -> None:
             ep.last_prefetch_at = now
             await _cancel_queued_auto_freeze(db, ep)
         if ep.storage_tier == "cold":
-            priority = 90 - (i * 10)
+            priority = max(10, 90 - (i * 10))
             ep.last_prefetch_at = now
             await _cancel_queued_auto_freeze(db, ep)
             await queue_transfer(db, ep.id, direction="reheat", trigger="prefetch", priority=priority)

@@ -10,7 +10,7 @@ Teapot is an intelligent tiered storage system that transparently extends PICO's
 
 - A **unified media library** visible to Jellyfin (and Sonarr/Radarr) regardless of where files physically reside
 - **Live scoring** of every media file's "hotness" based on playback patterns, popularity, recency, and predictions
-- **Predictive prefetching** — when a user plays S01E05, the next 3 episodes automatically warm up
+- **Predictive prefetching** — when a user plays S01E05, the next episodes automatically warm up (count configurable via `prefetch_episodes_ahead`, default 3)
 - **Custom Jellyfin UI** — cold-stored content shows visual indicators, real-time download progress on playback, and manual "warm up" buttons
 - A **dashboard** for PICO to monitor the full system: hotness heatmaps, transfer queues, storage utilization, and per-file status
 
@@ -609,7 +609,7 @@ async def on_playback_start(event: PlaybackEvent):
     
     # 3. Prefetch logic for series
     if item.item_type == 'episode':
-        await prefetch_next_episodes(item, count=3)
+        await prefetch_next_episodes(item, count=settings.prefetch_episodes_ahead)
         await prefetch_season_premiere_if_near_end(item)
     
     # 4. Prefetch logic for movies — warm up "similar" movies
@@ -618,7 +618,7 @@ async def on_playback_start(event: PlaybackEvent):
     # 5. Push live update to dashboard via WebSocket
     await broadcast_score_update(item)
 
-async def prefetch_next_episodes(current: MediaItem, count: int = 3):
+async def prefetch_next_episodes(current: MediaItem, count: int = settings.prefetch_episodes_ahead):
     """Queue reheat for next N episodes in the series."""
     next_episodes = await db.execute(
         select(MediaItem)
@@ -1517,10 +1517,10 @@ For the webhook endpoint, Jellyfin's webhook plugin can include a custom header.
 ### Phase 3: Live Scoring + Prefetch (Week 3-4)
 - [ ] Implement full scoring model with all 7 factors
 - [ ] Implement materialized view refresh scheduler
-- [ ] Implement prefetch engine (next 3 episodes, season premiere)
+- [ ] Implement prefetch engine (next N episodes via `prefetch_episodes_ahead`, season premiere)
 - [ ] Implement NAS space monitor + emergency freeze
 - [ ] Implement WebSocket for live updates
-- [ ] Test: play an episode, verify next 3 queue for reheat
+- [ ] Test: play an episode, verify next N episodes queue for reheat
 - [ ] Test: NAS space pressure triggers freeze
 
 ### Phase 4: Frostbite Dashboard (Week 4-5)
