@@ -4,12 +4,12 @@ Intelligent tiered storage engine for Jellyfin. Automatically moves media files 
 
 ## How it works
 
-Frostbite scores every media file on a temperature scale (0–100). Files cool down over time if unwatched and get frozen to cloud storage when they drop below the threshold. When someone starts playing a cold file, it reheats back to NAS. The scoring engine factors in recency, play count, unique viewers, velocity, newness, series status, and community rating.
+Frostbite scores every media file on a temperature scale (0–100). Files cool down over time if unwatched and get frozen to cloud storage when they drop below the threshold. A cold file reheats to NAS after it has been watched for a configurable amount of new playback. The scoring engine factors in recency, play count, unique viewers, velocity, newness, series status, and community rating.
 
 ```
 NAS (hot tier) ──── score drops below 25 ────► Cloud (cold tier)
                                                         │
-Cloud (cold tier) ── playback start / score > 60 ───► NAS (hot tier)
+Cloud (cold tier) ── watched threshold / score > 60 ─► NAS (hot tier)
 ```
 
 Files only enter the freeze cycle after [Tdarr](https://tdarr.io) has finished encoding them to AV1 — raw or in-progress encodes are never touched.
@@ -17,7 +17,8 @@ Files only enter the freeze cycle after [Tdarr](https://tdarr.io) has finished e
 ## Features
 
 - **Automatic freeze/reheat** — rclone copy-then-verify-then-delete (never a raw move)
-- **Predictive prefetch** — queues the next 3 episodes for reheat when you start watching a series
+- **Predictive prefetch** — queues a configurable number of next episodes for reheat when you start watching a series (3 by default)
+- **Playback reheat** — reheats cold media after a configurable amount of new playback (60 seconds by default)
 - **Tdarr gate** — only manages files that have completed AV1 encoding
 - **Jellyfin webhooks** — real-time playback events drive scoring boosts
 - **Emergency freeze** — triggers when NAS free space drops below threshold
@@ -28,9 +29,11 @@ Files only enter the freeze cycle after [Tdarr](https://tdarr.io) has finished e
 - **Sonarr/Radarr metadata** — series status and monitoring state feed into scoring
 - **Pause/resume controls** — pause all transfers and resume via dashboard
 - **Runtime settings** — adjust thresholds, concurrency, and freeze window without restart
+- **Manual reheat protection** — temporarily prevents automatic and space-pressure freezes after a manual reheat
 - **Playback history import** — full reimport from Jellyfin Playback Reporting plugin
 - **Multi-node rclone** — parallel transfers across multiple cluster nodes
 - **Orphan cleanup** — library sync removes stale entries when files are replaced or deleted
+- **Deletion review** — scan low-temperature cold media for deletion candidates and protect item or series exceptions
 
 ## Stack
 
@@ -73,10 +76,12 @@ Jellyfin ──webhook──► Frostbite API ◄── React Dashboard (SPA)
                           NAS ◄────► OpenDrive (encrypted)
 
 Infrastructure:
-  mergerfs ─── union mount (NAS + cloud read-only)
+  mergerfs ─── union mount (NAS + cloud branch)
   rclone  ─── encrypted remote + VFS cache invalidation
   Tdarr   ─── AV1 encoding gate (Intel QSV)
 ```
+
+The cloud rclone mount is intended to be read-only; all cloud writes should go through Frostbite's rclone RC transfer path. The current deployment needs reconciliation to enforce that policy. See [incident 003](incidents/003-shin-chan-cold-tier-vfs-cache.md) for context.
 
 ## API
 
@@ -89,14 +94,18 @@ Infrastructure:
 | `/api/items` | GET | Media items with filtering, sorting, pagination |
 | `/api/items/{id}/score-breakdown` | GET | Per-factor temperature breakdown |
 | `/api/items/{id}/temperature` | PATCH | Override item temperature |
+| `/api/status/{id}` | GET | Item storage-tier and transfer status |
 | `/api/series` | GET | Series/season aggregation |
 | `/api/transfers` | GET | Transfer queue with filtering |
+| `/api/transfers/{id}` | GET | Transfer detail |
 | `/api/transfers/{id}/cancel` | POST | Cancel a transfer |
 | `/api/transfers/{id}/retry` | POST | Retry failed transfer |
 | `/api/transfers/bulk-cancel` | POST | Bulk cancel transfers |
+| `/api/transfers/bulk-bump` | POST | Raise priority for queued transfers |
 | `/api/transfers/bulk-retry` | POST | Bulk retry transfers |
 | `/api/transfers/pause-all` | POST | Pause transfer worker |
 | `/api/transfers/resume` | POST | Resume transfer worker |
+| `/api/transfers/worker-status` | GET | Transfer-worker status |
 | `/api/freeze` | POST | Manual freeze single item |
 | `/api/reheat` | POST | Manual reheat single item |
 | `/api/bulk-freeze` | POST | Bulk freeze by IDs |
@@ -109,10 +118,11 @@ Infrastructure:
 | `/api/scoring/run` | POST | Trigger scoring sweep |
 | `/api/tdarr/sync` | POST | Trigger Tdarr eligibility sync |
 | `/api/playback/import-history` | POST | Reimport Jellyfin playback history |
+| `/api/deletion/*` | GET/POST/DELETE | Scan and approve deletion candidates; manage item and series exceptions |
 
 ## Configuration
 
-All settings are environment variables injected via Doppler:
+Deployment settings are environment variables injected via Doppler:
 
 | Variable | Description |
 |---|---|
@@ -123,21 +133,30 @@ All settings are environment variables injected via Doppler:
 | `RADARR_URL` / `RADARR_API_KEY` | Radarr connection |
 | `TDARR_URL` / `TDARR_API_KEY` | Tdarr connection |
 | `RCLONE_RC_URL` | rclone RC daemon URL |
+| `RCLONE_RC_URLS` | Comma-separated transfer RC endpoints on all nodes |
+| `RCLONE_VFS_URLS` | Comma-separated VFS cache RC endpoints on all nodes |
 | `RCLONE_REMOTE` | rclone remote name (default: `opendrive-crypt`) |
 
-Runtime-adjustable thresholds (editable via dashboard):
+Runtime-adjustable settings (editable via dashboard):
 
 | Setting | Default |
 |---|---|
 | `FREEZE_THRESHOLD` | 25.0 |
 | `REHEAT_THRESHOLD` | 60.0 |
 | `PREFETCH_BOOST` | +40.0 pts |
+| `PREFETCH_COOLDOWN_DAYS` | 3 days |
+| `PREFETCH_GRACE_HOURS` | 12 hours |
+| `PREFETCH_EPISODES_AHEAD` | 3 episodes |
+| `PLAYBACK_REHEAT_ENABLED` | true |
+| `PLAYBACK_REHEAT_AFTER_SECONDS` | 60 seconds |
+| `MANUAL_REHEAT_FREEZE_WINDOW_DAYS` | 2 days |
 | `MAX_CONCURRENT_REHEATS` | 2 |
 | `MAX_CONCURRENT_FREEZES` | 2 |
 | `FREEZE_WINDOW_START` | 00:00 IST |
 | `FREEZE_WINDOW_END` | 08:00 IST |
 | `EMERGENCY_FREEZE_THRESHOLD_GB` | 15 GiB |
 | `COLD_TRANSFER_MIN_NAS_USED_GB` | 3000 GiB |
+| `DELETION_THRESHOLD` | 3.0 |
 
 Storage threshold setting names still use the legacy `_GB` suffix, but Frostbite interprets them as GiB and displays them as GiB in the dashboard.
 
