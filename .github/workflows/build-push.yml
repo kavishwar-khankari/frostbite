@@ -31,7 +31,7 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
         env:
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: 'sqlite+aiosqlite:///:memory:'
 
   build-and-push:
     if: github.event_name == 'push'
