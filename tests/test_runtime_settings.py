@@ -118,6 +118,11 @@ def test_save_override_rejects_non_editable_setting(monkeypatch):
         asyncio.run(runtime_settings.save_override("database_url", "sqlite://"))
 
 
+def test_stored_disabled_playback_reheat_is_not_treated_as_truthy():
+    assert runtime_settings._coerce(bool, "False") is False
+    assert runtime_settings._coerce(bool, "True") is True
+
+
 def test_load_overrides_casts_editable_rows_and_ignores_others(monkeypatch):
     rows = [
         SimpleNamespace(key="freeze_threshold", value="11.5"),
