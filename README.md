@@ -120,6 +120,18 @@ The cloud rclone mount is intended to be read-only; all cloud writes should go t
 | `/api/playback/import-history` | POST | Reimport Jellyfin playback history |
 | `/api/deletion/*` | GET/POST/DELETE | Scan and approve deletion candidates; manage item and series exceptions |
 
+## Testing
+
+The [runtime settings acceptance examples](docs/acceptance/runtime-settings.feature) have unit and API integration coverage. The integration test uses a disposable SQLite `app_settings` table. Run the tests locally without connecting to the deployment database:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+DATABASE_URL=sqlite+aiosqlite:///:memory: .venv/bin/python -m pytest -q
+```
+
+CI runs the same pytest suite on pull requests and main-branch pushes before publishing an image.
+
 ## Configuration
 
 Deployment settings are environment variables injected via Doppler:
